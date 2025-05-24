@@ -312,6 +312,45 @@ app.get('/links/creator/:creatorAddress', async (req, res) => {
 	}
 });
 
+// New endpoint to get title by buy_short_code
+app.get('/info/:buy_short_code', async (req, res) => {
+	const { buy_short_code } = req.params;
+
+	// Predefined list of descriptions
+	const descriptions = [
+		"Unlock exclusive content and dive deeper into the story.",
+		"Get access to premium material not available anywhere else.",
+		"Discover the secrets behind this amazing creation.",
+		"Support the creator and enjoy this unique piece of content.",
+		"Your gateway to an enhanced experience."
+	];
+
+	try {
+		const link = await db.getLinkByBuyShortCode(buy_short_code);
+
+		if (!link) {
+			return res.status(404).json({ error: 'Link not found for the given buy short code.' });
+		}
+
+		// Optionally, you could also check if the link is active, depending on requirements
+		// if (!link.is_active) {
+		//    return res.status(403).json({ error: 'This link is currently inactive.' });
+		// }
+
+		const randomDescription = descriptions[Math.floor(Math.random() * descriptions.length)];
+
+		res.status(200).json({
+			buyShortCode: link.buy_short_code,
+			title: link.title,
+			description: randomDescription // Add the random description here
+		});
+
+	} catch (error) {
+		console.error(`Error fetching title for buy_short_code ${buy_short_code}:`, error);
+		res.status(500).json({ error: 'Failed to retrieve title', details: error.message });
+	}
+});
+
 app.listen(port, () => {
 	console.log(`GivaBit server listening on port ${port}`)
 	console.log(`Access the GivaBit interface at: http://localhost:${port}/`)
@@ -328,4 +367,5 @@ app.listen(port, () => {
 	console.log('  GET    /buy/:buy_short_code')
 	console.log('  GET    /links/creator/:creatorAddress')
 	console.log('  PATCH  /links/:link_hash/status')
+	console.log('  GET    /info/:buy_short_code')
 })

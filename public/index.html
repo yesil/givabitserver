@@ -141,6 +141,21 @@
         </div>
     </div>
 
+    <!-- Get Content Info by Buy Code -->
+    <div class="container">
+        <h2>6. Get Content Info by Buy Code</h2>
+        <p class="endpoint">GET /info/{buy_short_code}</p>
+        <form id="getInfoByBuyCodeForm">
+            <label for="buyCodeInfo">Buy Short Code:</label>
+            <input type="text" id="buyCodeInfo" name="buyCodeInfo" placeholder="YourBuyShortCode" required>
+            <button type="submit">Get Info</button>
+        </form>
+        <div class="response-area">
+            <h3>Response:</h3>
+            <pre id="getInfoByBuyCodeResponse">Awaiting submission...</pre>
+        </div>
+    </div>
+
     <script>
         const API_BASE_URL = window.location.origin;
         let currentBtcPriceInUSD = null;
@@ -333,6 +348,27 @@
                 displayResponse('getLinksByCreatorResponse', result);
             } catch (error) {
                 displayError('getLinksByCreatorResponse', error, error.status);
+            }
+        });
+
+        // 6. Get Content Info by Buy Code
+        document.getElementById('getInfoByBuyCodeForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const buyCode = document.getElementById('buyCodeInfo').value;
+            
+            if (!buyCode) {
+                displayError('getInfoByBuyCodeResponse', { message: 'Buy Short Code is required.' });
+                return;
+            }
+            document.getElementById('getInfoByBuyCodeResponse').textContent = 'Processing...';
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/info/${encodeURIComponent(buyCode)}`);
+                const result = await response.json();
+                if (!response.ok) throw {...result, message: result.error || `HTTP error ${response.status}`};
+                displayResponse('getInfoByBuyCodeResponse', result);
+            } catch (error) {
+                displayError('getInfoByBuyCodeResponse', error, error.status);
             }
         });
 
