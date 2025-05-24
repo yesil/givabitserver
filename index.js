@@ -256,28 +256,18 @@ app.patch('/links/:link_hash/status', async (req, res) => {
 
 // Endpoint to get links by creatorAddress
 app.get('/links/creator/:creatorAddress', async (req, res) => {
-	const { creatorAddress } = req.params;
-	let { limit, offset } = req.query;
+	let { creatorAddress } = req.params; // Use let to allow reassignment
 
-	// Validate creatorAddress (basic check, can be improved with ethers.isAddress)
-	if (!creatorAddress || typeof creatorAddress !== 'string' || !creatorAddress.startsWith('0x')) { // Basic validation
+	// Validate creatorAddress format before normalization
+	if (!creatorAddress || typeof creatorAddress !== 'string' || !creatorAddress.startsWith('0x')) { 
 		return res.status(400).json({ error: 'Invalid creatorAddress format.' });
 	}
 
-	// Validate and parse limit
-	limit = parseInt(limit, 10);
-	if (isNaN(limit) || limit <= 0) {
-		limit = 20; // Default limit
-	}
-
-	// Validate and parse offset
-	offset = parseInt(offset, 10);
-	if (isNaN(offset) || offset < 0) {
-		offset = 0; // Default offset
-	}
+	// Normalize to lowercase for consistent querying
+	creatorAddress = creatorAddress.toLowerCase();
 
 	try {
-		const { links, totalMatches } = await db.getLinksByCreator(creatorAddress, limit, offset);
+		const { links, totalMatches } = await db.getLinksByCreator(creatorAddress);
 		
 		const formattedLinks = links.map(link => {
 			const shareableBuyLink = `${GIVABIT_BASE_URL}/buy/${link.buy_short_code}`;
@@ -300,11 +290,7 @@ app.get('/links/creator/:creatorAddress', async (req, res) => {
 
 		res.status(200).json({
 			links: formattedLinks,
-			pagination: {
-				limit: limit,
-				offset: offset,
-				totalMatches: totalMatches
-			}
+			totalLinks: totalMatches // Renamed for clarity since there is no pagination object anymore
 		});
 	} catch (error) {
 		console.error(`Error fetching links for creator ${creatorAddress}:`, error);
@@ -319,7 +305,6 @@ app.get('/', (req, res) => res.send('GivaBit Server is running! Refer to PRD.md 
 
 app.listen(port, () => {
 	console.log(`GivaBit server listening on port ${port}`)
-	// console.log(`Base URL for content (dev): http://localhost:${port}${GIVABIT_BASE_URL.startsWith('http') ? new URL(GIVABIT_BASE_URL).pathname : GIVABIT_BASE_URL}`)
 	console.log(`Access the GivaBit interface at: http://localhost:${port}/`)
 	
 	const givabitAppPath = GIVABIT_BASE_URL.startsWith('http') ? new URL(GIVABIT_BASE_URL).pathname : GIVABIT_BASE_URL;

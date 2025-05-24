@@ -83,7 +83,7 @@ function storeGatedLink(linkData) {
       linkData.buy_short_code,
       linkData.access_short_code,
       linkData.title,
-      linkData.creator_address,
+      linkData.creator_address ? linkData.creator_address.toLowerCase() : null,
       linkData.price_in_erc20,
       linkData.tx_hash,
       linkData.is_active === undefined ? true : linkData.is_active,
@@ -178,27 +178,25 @@ function updateLinkStatus(linkHash, isActive, statusUpdateTxHash) {
 }
 
 /**
- * Retrieves links for a specific creator with pagination.
- * Also retrieves the total count of links for that creator for pagination metadata.
+ * Retrieves links for a specific creator.
+ * Also retrieves the total count of links for that creator.
  * @param {string} creatorAddress The wallet address of the creator.
- * @param {number} limit Max number of links to return.
- * @param {number} offset Number of links to skip.
  * @returns {Promise<{links: Array<object>, totalMatches: number}>} An object containing the list of links and the total count.
  */
-async function getLinksByCreator(creatorAddress, limit = 20, offset = 0) {
+async function getLinksByCreator(creatorAddress) {
   return new Promise((resolve, reject) => {
+    const normalizedCreatorAddress = creatorAddress ? creatorAddress.toLowerCase() : null;
     const linksSql = `
       SELECT id, original_url, link_hash, buy_short_code, access_short_code, title, creator_address, price_in_erc20, tx_hash, status_update_tx_hash, is_active, created_at, updated_at
       FROM GatedLinks
       WHERE creator_address = ?
-      ORDER BY created_at DESC
-      LIMIT ? OFFSET ?;
+      ORDER BY created_at DESC;
     `;
     const countSql = `SELECT COUNT(*) as totalMatches FROM GatedLinks WHERE creator_address = ?;`;
 
     db.serialize(() => {
       // First, get the total count
-      db.get(countSql, [creatorAddress], (countErr, countRow) => {
+      db.get(countSql, [normalizedCreatorAddress], (countErr, countRow) => {
         if (countErr) {
           console.error('Error fetching count for getLinksByCreator:', countErr.message);
           return reject(countErr);
@@ -206,8 +204,8 @@ async function getLinksByCreator(creatorAddress, limit = 20, offset = 0) {
 
         const totalMatches = countRow ? countRow.totalMatches : 0;
 
-        // Then, get the paginated links
-        db.all(linksSql, [creatorAddress, limit, offset], (linksErr, rows) => {
+        // Then, get all the links
+        db.all(linksSql, [normalizedCreatorAddress], (linksErr, rows) => {
           if (linksErr) {
             console.error('Error fetching links for getLinksByCreator:', linksErr.message);
             reject(linksErr);
