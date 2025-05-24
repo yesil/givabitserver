@@ -9,11 +9,53 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
     throw err;
   } else {
     console.log('Connected to the SQLite database.');
-    initializeDb();
+    initializeDb().catch(initErr => {
+      console.error('Failed to initialize database:', initErr.message);
+    });
   }
 });
 
-function initializeDb() {
+// Promisified DB helpers
+function dbRun(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+      if (err) {
+        console.error('Error running SQL:', err.message, '\nSQL:', sql, '\nParams:', params);
+        reject(err);
+      } else {
+        resolve(this);
+      }
+    });
+  });
+}
+
+function dbGet(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) {
+        console.error('Error running SQL GET:', err.message, '\nSQL:', sql, '\nParams:', params);
+        reject(err);
+      } else {
+        resolve(row);
+      }
+    });
+  });
+}
+
+function dbAll(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) {
+        console.error('Error running SQL ALL:', err.message, '\nSQL:', sql, '\nParams:', params);
+        reject(err);
+      } else {
+        resolve(rows);
+      }
+    });
+  });
+}
+
+async function initializeDb() {
   const createTableSql = `
     CREATE TABLE IF NOT EXISTS GatedLinks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,21 +84,15 @@ function initializeDb() {
     END;
   `;
 
-  db.serialize(() => {
-    db.run(createTableSql, (err) => {
-      if (err) {
-        console.error('Error creating GatedLinks table', err.message);
-      } else {
-        console.log('GatedLinks table checked/created successfully.');
-        // Create the trigger after table creation
-        db.run(createTriggerSql, (triggerErr) => {
-          if (triggerErr) {
-            console.error('Error creating GatedLinks updated_at trigger', triggerErr.message);
-          }
-        });
-      }
-    });
-  });
+  try {
+    await dbRun(createTableSql);
+    console.log('GatedLinks table checked/created successfully.');
+    await dbRun(createTriggerSql);
+    console.log('GatedLinks updated_at trigger checked/created successfully.');
+  } catch (err) {
+    console.error('Error during DB initialization:', err.message);
+    throw err;
+  }
 }
 
 /**
@@ -73,30 +109,27 @@ function initializeDb() {
  * @param {boolean} linkData.is_active
  * @returns {Promise<number>} The ID of the newly inserted row.
  */
-function storeGatedLink(linkData) {
-  return new Promise((resolve, reject) => {
-    const sql = `INSERT INTO GatedLinks (original_url, link_hash, buy_short_code, access_short_code, title, creator_address, price_in_erc20, tx_hash, is_active)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-    const params = [
-      linkData.original_url,
-      linkData.link_hash,
-      linkData.buy_short_code,
-      linkData.access_short_code,
-      linkData.title,
-      linkData.creator_address ? linkData.creator_address.toLowerCase() : null,
-      linkData.price_in_erc20,
-      linkData.tx_hash,
-      linkData.is_active === undefined ? true : linkData.is_active,
-    ];
-    db.run(sql, params, function (err) {
-      if (err) {
-        console.error('Error storing gated link:', err.message);
-        reject(err);
-      } else {
-        resolve(this.lastID);
-      }
-    });
-  });
+async function storeGatedLink(linkData) {
+  const sql = `INSERT INTO GatedLinks (original_url, link_hash, buy_short_code, access_short_code, title, creator_address, price_in_erc20, tx_hash, is_active)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+  const params = [
+    linkData.original_url,
+    linkData.link_hash,
+    linkData.buy_short_code,
+    linkData.access_short_code,
+    linkData.title,
+    linkData.creator_address ? linkData.creator_address.toLowerCase() : null,
+    linkData.price_in_erc20,
+    linkData.tx_hash,
+    linkData.is_active === undefined ? true : linkData.is_active,
+  ];
+  try {
+    const result = await dbRun(sql, params);
+    return result.lastID;
+  } catch (err) {
+    console.error('Error storing gated link:', err.message);
+    throw err;
+  }
 }
 
 /**
@@ -104,18 +137,15 @@ function storeGatedLink(linkData) {
  * @param {string} accessShortCode
  * @returns {Promise<object|null>} The link data or null if not found.
  */
-function getLinkByAccessShortCode(accessShortCode) {
-  return new Promise((resolve, reject) => {
-    const sql = `SELECT * FROM GatedLinks WHERE access_short_code = ?`;
-    db.get(sql, [accessShortCode], (err, row) => {
-      if (err) {
-        console.error('Error fetching link by access_short_code:', err.message);
-        reject(err);
-      } else {
-        resolve(row || null);
-      }
-    });
-  });
+async function getLinkByAccessShortCode(accessShortCode) {
+  const sql = `SELECT * FROM GatedLinks WHERE access_short_code = ?`;
+  try {
+    const row = await dbGet(sql, [accessShortCode]);
+    return row || null;
+  } catch (err) {
+    console.error('Error fetching link by access_short_code:', err.message);
+    throw err;
+  }
 }
 
 /**
@@ -123,18 +153,15 @@ function getLinkByAccessShortCode(accessShortCode) {
  * @param {string} buyShortCode
  * @returns {Promise<object|null>} The link data or null if not found.
  */
-function getLinkByBuyShortCode(buyShortCode) {
-  return new Promise((resolve, reject) => {
-    const sql = `SELECT * FROM GatedLinks WHERE buy_short_code = ?`;
-    db.get(sql, [buyShortCode], (err, row) => {
-      if (err) {
-        console.error('Error fetching link by buy_short_code:', err.message);
-        reject(err);
-      } else {
-        resolve(row || null);
-      }
-    });
-  });
+async function getLinkByBuyShortCode(buyShortCode) {
+  const sql = `SELECT * FROM GatedLinks WHERE buy_short_code = ?`;
+  try {
+    const row = await dbGet(sql, [buyShortCode]);
+    return row || null;
+  } catch (err) {
+    console.error('Error fetching link by buy_short_code:', err.message);
+    throw err;
+  }
 }
 
 /**
@@ -142,18 +169,15 @@ function getLinkByBuyShortCode(buyShortCode) {
  * @param {string} linkHash
  * @returns {Promise<object|null>} The link data or null if not found.
  */
-function getLinkByHash(linkHash) {
-  return new Promise((resolve, reject) => {
-    const sql = `SELECT * FROM GatedLinks WHERE link_hash = ?`;
-    db.get(sql, [linkHash], (err, row) => {
-      if (err) {
-        console.error('Error fetching link by link_hash:', err.message);
-        reject(err);
-      } else {
-        resolve(row || null);
-      }
-    });
-  });
+async function getLinkByHash(linkHash) {
+  const sql = `SELECT * FROM GatedLinks WHERE link_hash = ?`;
+  try {
+    const row = await dbGet(sql, [linkHash]);
+    return row || null;
+  } catch (err) {
+    console.error('Error fetching link by link_hash:', err.message);
+    throw err;
+  }
 }
 
 /**
@@ -163,18 +187,15 @@ function getLinkByHash(linkHash) {
  * @param {string} statusUpdateTxHash
  * @returns {Promise<number>} The number of rows updated.
  */
-function updateLinkStatus(linkHash, isActive, statusUpdateTxHash) {
-  return new Promise((resolve, reject) => {
-    const sql = `UPDATE GatedLinks SET is_active = ?, status_update_tx_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE link_hash = ?`;
-    db.run(sql, [isActive, statusUpdateTxHash, linkHash], function (err) {
-      if (err) {
-        console.error('Error updating link status:', err.message);
-        reject(err);
-      } else {
-        resolve(this.changes);
-      }
-    });
-  });
+async function updateLinkStatus(linkHash, isActive, statusUpdateTxHash) {
+  const sql = `UPDATE GatedLinks SET is_active = ?, status_update_tx_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE link_hash = ?`;
+  try {
+    const result = await dbRun(sql, [isActive, statusUpdateTxHash, linkHash]);
+    return result.changes;
+  } catch (err) {
+    console.error('Error updating link status:', err.message);
+    throw err;
+  }
 }
 
 /**
@@ -184,47 +205,32 @@ function updateLinkStatus(linkHash, isActive, statusUpdateTxHash) {
  * @returns {Promise<{links: Array<object>, totalMatches: number}>} An object containing the list of links and the total count.
  */
 async function getLinksByCreator(creatorAddress) {
-  return new Promise((resolve, reject) => {
-    const normalizedCreatorAddress = creatorAddress ? creatorAddress.toLowerCase() : null;
-    const linksSql = `
-      SELECT id, original_url, link_hash, buy_short_code, access_short_code, title, creator_address, price_in_erc20, tx_hash, status_update_tx_hash, is_active, created_at, updated_at
-      FROM GatedLinks
-      WHERE creator_address = ?
-      ORDER BY created_at DESC;
-    `;
-    const countSql = `SELECT COUNT(*) as totalMatches FROM GatedLinks WHERE creator_address = ?;`;
+  const normalizedCreatorAddress = creatorAddress ? creatorAddress.toLowerCase() : null;
+  const linksSql = `
+    SELECT id, original_url, link_hash, buy_short_code, access_short_code, title, creator_address, price_in_erc20, tx_hash, status_update_tx_hash, is_active, created_at, updated_at
+    FROM GatedLinks
+    WHERE creator_address = ?
+    ORDER BY created_at DESC;
+  `;
+  const countSql = `SELECT COUNT(*) as totalMatches FROM GatedLinks WHERE creator_address = ?;`;
 
-    db.serialize(() => {
-      // First, get the total count
-      db.get(countSql, [normalizedCreatorAddress], (countErr, countRow) => {
-        if (countErr) {
-          console.error('Error fetching count for getLinksByCreator:', countErr.message);
-          return reject(countErr);
-        }
-
-        const totalMatches = countRow ? countRow.totalMatches : 0;
-
-        // Then, get all the links
-        db.all(linksSql, [normalizedCreatorAddress], (linksErr, rows) => {
-          if (linksErr) {
-            console.error('Error fetching links for getLinksByCreator:', linksErr.message);
-            reject(linksErr);
-          } else {
-            resolve({ links: rows || [], totalMatches });
-          }
-        });
-      });
-    });
-  });
+  try {
+    const countRow = await dbGet(countSql, [normalizedCreatorAddress]);
+    const totalMatches = countRow ? countRow.totalMatches : 0;
+    const links = await dbAll(linksSql, [normalizedCreatorAddress]);
+    return { links: links || [], totalMatches };
+  } catch (err) {
+    console.error('Error fetching links for getLinksByCreator:', err.message);
+    throw err;
+  }
 }
 
 module.exports = {
-  initializeDb, // Exported for potential direct call, though it runs on connect
+  initializeDb,
   storeGatedLink,
   getLinkByAccessShortCode,
   getLinkByBuyShortCode,
   getLinkByHash,
   updateLinkStatus,
   getLinksByCreator
-  // dbInstance: db // Optionally export the db instance if needed for complex queries outside this module
 }; 
