@@ -288,6 +288,8 @@ app.get('/links/creator/:creatorAddress', async (req, res) => {
 			};
 		});
 
+		console.log('Formatted links for creator:', creatorAddress, JSON.stringify(formattedLinks, null, 2)); // Log the formatted links
+
 		res.status(200).json({
 			links: formattedLinks
 		});
@@ -296,11 +298,6 @@ app.get('/links/creator/:creatorAddress', async (req, res) => {
 		res.status(500).json({ error: 'Failed to retrieve links for creator', details: error.message });
 	}
 });
-
-// app.get('/', (req, res) => res.send('GivaBit Server is running! Refer to PRD.md for API endpoints.'))
-/*
-app.get('/', (req, res) => res.send('GivaBit Server is running! Refer to PRD.md for API endpoints.'))
-*/
 
 app.listen(port, () => {
 	console.log(`GivaBit server listening on port ${port}`)
