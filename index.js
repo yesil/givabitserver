@@ -30,7 +30,7 @@ app.get('/apple-app-site-association', (req, res) => {
 app.use(express.json()) // Middleware to parse JSON request bodies
 app.use(express.static('public')); // Serve static files from 'public' directory
 
-const GIVABIT_BASE_URL = process.env.GIVABIT_APP_URL || 'https://givabit-server-krlus.ondigitalocean.app/givabitserver'
+const GIVABIT_BASE_URL = process.env.GIVABIT_APP_URL || 'https://givabit-server-krlus.ondigitalocean.app'
 
 /**
  * Generates a keccak256 hash for a given string (URL).
