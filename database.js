@@ -21,6 +21,7 @@ function initializeDb() {
       link_hash TEXT NOT NULL UNIQUE,      -- This is the linkId from the smart contract
       buy_short_code TEXT NOT NULL UNIQUE, -- For the link that initiates purchase
       access_short_code TEXT NOT NULL UNIQUE, -- For direct content access post-payment
+      title TEXT,                          -- Title for the link
       creator_address TEXT NOT NULL,
       price_in_erc20 TEXT NOT NULL,
       tx_hash TEXT,                       -- Transaction hash of the createLink call
@@ -65,6 +66,7 @@ function initializeDb() {
  * @param {string} linkData.link_hash
  * @param {string} linkData.buy_short_code
  * @param {string} linkData.access_short_code
+ * @param {string} linkData.title
  * @param {string} linkData.creator_address
  * @param {string} linkData.price_in_erc20
  * @param {string} linkData.tx_hash
@@ -73,13 +75,14 @@ function initializeDb() {
  */
 function storeGatedLink(linkData) {
   return new Promise((resolve, reject) => {
-    const sql = `INSERT INTO GatedLinks (original_url, link_hash, buy_short_code, access_short_code, creator_address, price_in_erc20, tx_hash, is_active)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+    const sql = `INSERT INTO GatedLinks (original_url, link_hash, buy_short_code, access_short_code, title, creator_address, price_in_erc20, tx_hash, is_active)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
     const params = [
       linkData.original_url,
       linkData.link_hash,
       linkData.buy_short_code,
       linkData.access_short_code,
+      linkData.title,
       linkData.creator_address,
       linkData.price_in_erc20,
       linkData.tx_hash,
@@ -185,7 +188,7 @@ function updateLinkStatus(linkHash, isActive, statusUpdateTxHash) {
 async function getLinksByCreator(creatorAddress, limit = 20, offset = 0) {
   return new Promise((resolve, reject) => {
     const linksSql = `
-      SELECT id, original_url, link_hash, buy_short_code, access_short_code, creator_address, price_in_erc20, tx_hash, status_update_tx_hash, is_active, created_at, updated_at
+      SELECT id, original_url, link_hash, buy_short_code, access_short_code, title, creator_address, price_in_erc20, tx_hash, status_update_tx_hash, is_active, created_at, updated_at
       FROM GatedLinks
       WHERE creator_address = ?
       ORDER BY created_at DESC

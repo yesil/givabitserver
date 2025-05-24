@@ -42,14 +42,14 @@ function generateShortCode() {
 
 // req1: POST /create-gated-link
 app.post('/create-gated-link', async (req, res) => {
-	const { url, priceInERC20, creatorAddress } = req.body
+	const { url, title, priceInERC20, creatorAddress } = req.body
 
-	if (!url || !priceInERC20 || !creatorAddress) {
+	if (!url || !priceInERC20 || !creatorAddress) { // Title is optional
 		return res.status(400).json({ error: 'Missing required fields: url, priceInERC20, creatorAddress' })
 	}
 
 	try {
-		const linkHash = generateLinkHash(url)
+		const linkHash = generateLinkHash(url) // Hash is based on URL, not title
 		const buyShortCode = generateShortCode()
 		const accessShortCode = generateShortCode()
 
@@ -72,6 +72,7 @@ app.post('/create-gated-link', async (req, res) => {
 				link_hash: linkHash,
 				buy_short_code: buyShortCode,
 				access_short_code: accessShortCode,
+				title: title, // Add title here
 				creator_address: creatorAddress,
 				price_in_erc20: priceInERC20,
 				tx_hash: actualTxHash,
@@ -91,6 +92,7 @@ app.post('/create-gated-link', async (req, res) => {
 			buyShortCode: buyShortCode,
 			accessShortCode: accessShortCode,
 			originalUrl: url,
+			title: title, // Include title in response
 			creatorAddress: creatorAddress,
 			priceInERC20: priceInERC20,
 			transactionHash: actualTxHash, 
@@ -188,7 +190,7 @@ app.get('/buy/:buy_short_code', async (req, res) => {
 		res.status(200).json({
 			linkId: link.link_hash, // Full hash for the app to use with payForAccess
 			buyShortCode: link.buy_short_code,
-			// title: link.title, // Add if you store title/description in DB
+			title: link.title, // Add title here
 			// description: link.description,
 			creatorAddress: link.creator_address,
 			priceInERC20: link.price_in_erc20, // This should ideally be from SC for accuracy
@@ -284,6 +286,7 @@ app.get('/links/creator/:creatorAddress', async (req, res) => {
 				buyShortCode: link.buy_short_code,
 				accessShortCode: link.access_short_code,
 				originalUrl: link.original_url,
+				title: link.title, // Add title here
 				priceInERC20: link.price_in_erc20,
 				isActive: link.is_active,
 				createdAt: link.created_at,
