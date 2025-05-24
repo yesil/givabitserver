@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GivaBit Server Interface</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h2 { color: #5a2a88; border-bottom: 2px solid #5a2a88; padding-bottom: 10px; }
+        label { display: block; margin-top: 10px; font-weight: bold; }
+        input[type='text'], input[type='url'], input[type='number'], select {
+            width: calc(100% - 22px);
+            padding: 10px;
+            margin-top: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button { 
+            background-color: #5a2a88; color: white; padding: 10px 15px; 
+            border: none; border-radius: 4px; cursor: pointer; margin-top: 15px;
+            font-size: 16px;
+        }
+        button:hover { background-color: #47206f; }
+        pre { 
+            background-color: #2d2d2d; color: #f8f8f2; padding: 15px; 
+            border-radius: 4px; overflow-x: auto; white-space: pre-wrap; 
+            word-wrap: break-word; font-size: 14px; 
+        }
+        .endpoint { margin-bottom: 15px; font-style: italic; color: #666; }
+        .response-area { margin-top:15px; }
+    </style>
+</head>
+<body>
+    <h1>GivaBit API Test Interface</h1>
+
+    <!-- Create Gated Link -->
+    <div class="container">
+        <h2>1. Create Gated Link</h2>
+        <p class="endpoint">POST /create-gated-link</p>
+        <form id="createLinkForm">
+            <label for="url">Original URL:</label>
+            <input type="url" id="url" name="url" placeholder="https://example.com/my-content" required>
+
+            <label for="priceInUSD">Price in USD:</label>
+            <input type="number" id="priceInUSD" name="priceInUSD_display" placeholder="e.g., 10.00" required step="0.01">
+            
+            <p style="font-size: 0.9em; margin-top: 5px;">
+                Current BTC/USD rate: <span id="btcRate">Fetching...</span><br>
+                Equivalent: <span id="btcAmount">N/A</span> BTC
+            </p>
+
+            <label for="priceInERC20">Calculated Price (smallest ERC20 unit, 10^18 decimals):</label>
+            <input type="text" id="priceInERC20" name="priceInERC20" placeholder="Calculated automatically" readonly required>
+
+            <label for="creatorAddress">Creator Address:</label>
+            <input type="text" id="creatorAddress" name="creatorAddress" placeholder="0xYourCreatorAddress" required>
+
+            <button type="submit">Create Link</button>
+        </form>
+        <div class="response-area">
+            <h3>Response:</h3>
+            <pre id="createLinkResponse">Awaiting submission...</pre>
+        </div>
+    </div>
+
+    <!-- Get Content (Redirect) -->
+    <div class="container">
+        <h2>2. Access Content (Redirect)</h2>
+        <p class="endpoint">GET /content/{short_code}</p>
+        <form id="getContentForm">
+            <label for="shortCodeRedirect">Short Code:</label>
+            <input type="text" id="shortCodeRedirect" name="shortCodeRedirect" placeholder="YourShortCode" required>
+            <button type="submit">Access Content</button>
+        </form>
+        <p>This will attempt to redirect you to the original URL.</p>
+         <div class="response-area">
+            <h3>Client-side Status:</h3>
+            <pre id="getContentResponse">Awaiting submission...</pre>
+        </div>
+    </div>
+
+    <!-- Generate Social Posts -->
+    <div class="container">
+        <h2>3. Generate Social Posts</h2>
+        <p class="endpoint">GET /generate</p>
+        <form id="generatePostsForm">
+            <label for="linkHashGenerate">Link Hash (linkId):</label>
+            <input type="text" id="linkHashGenerate" name="linkHashGenerate" placeholder="0xYourLinkHash" required>
+
+            <label for="walletAddressGenerate">Your Wallet Address:</label>
+            <input type="text" id="walletAddressGenerate" name="walletAddressGenerate" placeholder="0xYourWalletAddress" required>
+
+            <button type="submit">Generate Posts</button>
+        </form>
+        <div class="response-area">
+            <h3>Response:</h3>
+            <pre id="generatePostsResponse">Awaiting submission...</pre>
+        </div>
+    </div>
+
+    <!-- Update Link Status -->
+    <div class="container">
+        <h2>4. Update Link Status</h2>
+        <p class="endpoint">PATCH /links/{link_hash}/status</p>
+        <form id="updateStatusForm">
+            <label for="linkHashStatus">Link Hash (linkId) to Update:</label>
+            <input type="text" id="linkHashStatus" name="linkHashStatus" placeholder="0xLinkHashToUpdate" required>
+
+            <label for="isActive">Set Active Status:</label>
+            <select id="isActive" name="isActive">
+                <option value="true">Active (true)</option>
+                <option value="false">Inactive (false)</option>
+            </select>
+
+            <button type="submit">Update Status</button>
+        </form>
+        <div class="response-area">
+            <h3>Response:</h3>
+            <pre id="updateStatusResponse">Awaiting submission...</pre>
+        </div>
+    </div>
+
+    <!-- Get Links by Creator -->
+    <div class="container">
+        <h2>5. Get Links by Creator</h2>
+        <p class="endpoint">GET /links/creator/{creatorAddress}</p>
+        <form id="getLinksByCreatorForm">
+            <label for="creatorAddressList">Creator Address:</label>
+            <input type="text" id="creatorAddressList" name="creatorAddressList" placeholder="0xCreatorAddressToList" required>
+
+            <label for="limit">Limit (optional):</label>
+            <input type="number" id="limit" name="limit" placeholder="e.g., 10">
+
+            <label for="offset">Offset (optional):</label>
+            <input type="number" id="offset" name="offset" placeholder="e.g., 0">
+
+            <button type="submit">Get Links</button>
+        </form>
+        <div class="response-area">
+            <h3>Response:</h3>
+            <pre id="getLinksByCreatorResponse">Awaiting submission...</pre>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = window.location.origin; // Assumes server runs on same host/port
+        let currentBtcPriceInUSD = null;
+
+        // Helper to display responses
+        function displayResponse(elementId, data) {
+            document.getElementById(elementId).textContent = JSON.stringify(data, null, 2);
+        }
+        function displayError(elementId, error, status) {
+            document.getElementById(elementId).textContent = `Error ${status || ''}: ${error.message || error}`;
+            if (error.details) {
+                 document.getElementById(elementId).textContent += `\nDetails: ${JSON.stringify(error.details, null, 2)}`;
+            }
+        }
+
+        async function fetchBitcoinPrice() {
+            const btcRateEl = document.getElementById('btcRate');
+            try {
+                const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
+                if (!response.ok) {
+                    throw new Error(`CoinGecko API request failed with status ${response.status}`);
+                }
+                const data = await response.json();
+                if (data.bitcoin && data.bitcoin.usd) {
+                    currentBtcPriceInUSD = data.bitcoin.usd;
+                    btcRateEl.textContent = `$${currentBtcPriceInUSD.toLocaleString()} per BTC`;
+                    calculateAndDisplayEquivalentPrice(); // Recalculate if USD input already has a value
+                } else {
+                    throw new Error('Invalid data format from CoinGecko API');
+                }
+            } catch (error) {
+                console.error('Error fetching Bitcoin price:', error);
+                btcRateEl.textContent = 'Error fetching price';
+                currentBtcPriceInUSD = null;
+                clearCalculatedPriceFields();
+            }
+        }
+
+        function calculateAndDisplayEquivalentPrice() {
+            const priceInUSDInput = document.getElementById('priceInUSD');
+            const btcAmountEl = document.getElementById('btcAmount');
+            const priceInERC20Input = document.getElementById('priceInERC20');
+
+            const usdValueStr = priceInUSDInput.value;
+            
+            if (!currentBtcPriceInUSD || usdValueStr === '' || isNaN(parseFloat(usdValueStr))) {
+                clearCalculatedPriceFields();
+                return;
+            }
+
+            const usdValue = parseFloat(usdValueStr);
+
+            if (usdValue > 0 && currentBtcPriceInUSD > 0) {
+                const btcEquivalent = usdValue / currentBtcPriceInUSD;
+                btcAmountEl.textContent = `${btcEquivalent.toFixed(8)} BTC`;
+
+                // Calculate price in smallest unit (10^18 decimals) using BigInt for precision
+                // (usdInCents * 10^18) / btcPriceInCents
+                const usdInCents = BigInt(Math.round(usdValue * 100));
+                const btcPriceInCents = BigInt(Math.round(currentBtcPriceInUSD * 100));
+                
+                if (btcPriceInCents === 0n) { // Avoid division by zero
+                     clearCalculatedPriceFields();
+                     btcAmountEl.textContent = 'Error: BTC price is zero?';
+                     return;
+                }
+
+                const E18 = BigInt('1000000000000000000'); // 10^18
+                const calculatedPriceBigInt = (usdInCents * E18) / btcPriceInCents;
+                priceInERC20Input.value = calculatedPriceBigInt.toString();
+
+            } else {
+                clearCalculatedPriceFields();
+            }
+        }
+        
+        function clearCalculatedPriceFields() {
+            document.getElementById('btcAmount').textContent = 'N/A';
+            document.getElementById('priceInERC20').value = '';
+        }
+
+        // Initialize price fetching and add event listeners on DOMContentLoaded
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchBitcoinPrice(); // Fetch initial price
+
+            const priceInUSDInput = document.getElementById('priceInUSD');
+            if (priceInUSDInput) {
+                priceInUSDInput.addEventListener('input', calculateAndDisplayEquivalentPrice);
+            }
+        });
+
+        // 1. Create Gated Link
+        document.getElementById('createLinkForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            const data = Object.fromEntries(formData.entries());
+            
+            document.getElementById('createLinkResponse').textContent = 'Processing...';
+            try {
+                const response = await fetch(`${API_BASE_URL}/create-gated-link`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                if (!response.ok) throw {...result, message: result.error || `HTTP error ${response.status}`}; 
+                displayResponse('createLinkResponse', result);
+            } catch (error) {
+                displayError('createLinkResponse', error, error.status);
+            }
+        });
+
+        // 2. Get Content (Redirect)
+        document.getElementById('getContentForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const shortCode = document.getElementById('shortCodeRedirect').value;
+            if (!shortCode) {
+                displayError('getContentResponse', {message: 'Short code is required.'});
+                return;
+            }
+            const url = `${API_BASE_URL}/content/${shortCode}`;
+            document.getElementById('getContentResponse').textContent = `Attempting to redirect to: ${url}`;
+            // Attempt to open in a new tab. If successful, the user is redirected.
+            // If it fails (e.g. pop-up blocker), they will see the message above.
+            // We can't easily catch the 404/403 from a direct window.location.href change or window.open in the same way as fetch.
+            window.open(url, '_blank'); 
+        });
+
+        // 3. Generate Social Posts
+        document.getElementById('generatePostsForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const linkHash = document.getElementById('linkHashGenerate').value;
+            const walletAddress = document.getElementById('walletAddressGenerate').value;
+            
+            if (!linkHash || !walletAddress) {
+                displayError('generatePostsResponse', {message: 'Link Hash and Wallet Address are required.'});
+                return;
+            }
+            document.getElementById('generatePostsResponse').textContent = 'Processing...';
+            try {
+                const response = await fetch(`${API_BASE_URL}/generate?linkHash=${encodeURIComponent(linkHash)}&walletAddress=${encodeURIComponent(walletAddress)}`);
+                const result = await response.json();
+                if (!response.ok) throw {...result, message: result.error || `HTTP error ${response.status}`};
+                displayResponse('generatePostsResponse', result);
+            } catch (error) {
+                displayError('generatePostsResponse', error, error.status);
+            }
+        });
+
+        // 4. Update Link Status
+        document.getElementById('updateStatusForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const linkHash = document.getElementById('linkHashStatus').value;
+            const isActive = document.getElementById('isActive').value === 'true';
+            
+            if (!linkHash) {
+                displayError('updateStatusResponse', {message: 'Link Hash is required.'});
+                return;
+            }
+            document.getElementById('updateStatusResponse').textContent = 'Processing...';
+            try {
+                const response = await fetch(`${API_BASE_URL}/links/${linkHash}/status`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ isActive })
+                });
+                const result = await response.json();
+                if (!response.ok) throw {...result, message: result.error || `HTTP error ${response.status}`};
+                displayResponse('updateStatusResponse', result);
+            } catch (error) {
+                displayError('updateStatusResponse', error, error.status);
+            }
+        });
+
+        // 5. Get Links by Creator
+        document.getElementById('getLinksByCreatorForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const creatorAddress = document.getElementById('creatorAddressList').value;
+            const limit = document.getElementById('limit').value;
+            const offset = document.getElementById('offset').value;
+
+            if (!creatorAddress) {
+                displayError('getLinksByCreatorResponse', { message: 'Creator Address is required.' });
+                return;
+            }
+            document.getElementById('getLinksByCreatorResponse').textContent = 'Processing...';
+            
+            let queryParams = ``;
+            if (limit) queryParams += `&limit=${encodeURIComponent(limit)}`;
+            if (offset) queryParams += `&offset=${encodeURIComponent(offset)}`;
+            if (queryParams.startsWith('&')) queryParams = queryParams.substring(1); // Remove leading & if present
+            if (queryParams) queryParams = `?${queryParams}`;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/links/creator/${encodeURIComponent(creatorAddress)}${queryParams}`);
+                const result = await response.json();
+                if (!response.ok) throw {...result, message: result.error || `HTTP error ${response.status}`};
+                displayResponse('getLinksByCreatorResponse', result);
+            } catch (error) {
+                displayError('getLinksByCreatorResponse', error, error.status);
+            }
+        });
+
+    </script>
+</body>
+</html> 
