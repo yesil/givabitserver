@@ -45,7 +45,7 @@ The GivaBit Server manages content monetization through the `GatedLinkAccessMana
                 *   `is_active` (BOOLEAN, NOT NULL, Default TRUE) - Reflects the link's status on the smart contract.
                 *   `created_at` (TIMESTAMP, Default CURRENT_TIMESTAMP)
     4.  **Generate Social Media Posts:**
-        *   Construct a shareable link in the format: `https://givabit-server-krlus.ondigitalocean.app/givabitserver/content/{link_hash}` (where `{link_hash}` is the `linkId`).
+        *   Construct a shareable link in the format: `https://givabit-server-krlus.ondigitalocean.app/content/{link_hash}` (where `{link_hash}` is the `linkId`).
 *   **Response Body (Success 201 - Created):**
     ```json
     {
@@ -56,7 +56,7 @@ The GivaBit Server manages content monetization through the `GatedLinkAccessMana
       "creatorAddress": "0x...",
       "priceInERC20": "100000000000000000",
       "transactionHash": "0x...tx_hash_from_blockchain...",
-      "shareableBuyLink": "https://givabit-server-krlus.ondigitalocean.app/givabitserver/buy/your_buy_short_code"
+      "shareableBuyLink": "https://givabit-server-krlus.ondigitalocean.app/buy/your_buy_short_code"
     }
     ```
 *   **Error Handling:**
@@ -93,7 +93,7 @@ The GivaBit Server manages content monetization through the `GatedLinkAccessMana
     1.  Verify `linkHash` and `walletAddress` parameters are provided.
     2.  Query the database to find the `ContentLinks` record matching `linkHash`. If not found, return 404.
     3.  Retrieve the `buy_short_code` from the found record.
-    4.  Construct the `shareableLink` (this is a buy link): `https://givabit-server-krlus.ondigitalocean.app/givabitserver/buy/{buy_short_code_from_db}`.
+    4.  Construct the `shareableLink` (this is a buy link): `https://givabit-server-krlus.ondigitalocean.app/buy/{buy_short_code_from_db}`.
     5.  Prepare social media post suggestions using the constructed `shareableLink`:
         *   **X (Twitter):** "Check out my new content! Purchase access here: [shareable_link] #GivaBit #ContentMonetization"
         *   **Instagram Post Caption / Story Link Sticker Text:** "New exclusive content! Get access: [shareable_link] #GivaBit #ExclusiveContent"
@@ -103,10 +103,10 @@ The GivaBit Server manages content monetization through the `GatedLinkAccessMana
     {
       "linkId": "0x...input_link_hash...",
       "buyShortCode": "retrieved_buy_short_code",
-      "shareableBuyLink": "https://givabit-server-krlus.ondigitalocean.app/givabitserver/buy/retrieved_buy_short_code",
+      "shareableBuyLink": "https://givabit-server-krlus.ondigitalocean.app/buy/retrieved_buy_short_code",
       "socialPosts": {
-        "twitter": "Check out my new content! Purchase access here: https://givabit-server-krlus.ondigitalocean.app/givabitserver/buy/retrieved_buy_short_code #GivaBit #ContentMonetization",
-        "instagram": "New exclusive content! Get access: https://givabit-server-krlus.ondigitalocean.app/givabitserver/buy/retrieved_buy_short_code #GivaBit #ExclusiveContent"
+        "twitter": "Check out my new content! Purchase access here: https://givabit-server-krlus.ondigitalocean.app/buy/retrieved_buy_short_code #GivaBit #ContentMonetization",
+        "instagram": "New exclusive content! Get access: https://givabit-server-krlus.ondigitalocean.app/buy/retrieved_buy_short_code #GivaBit #ExclusiveContent"
       }
     }
     ```

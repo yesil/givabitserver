@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "RUP996VQK8.avax.hackathon.givabit",
+        "paths": [ "/buy/*" ]
+      }
+    ]
+  }
+}

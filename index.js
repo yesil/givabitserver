@@ -4,6 +4,7 @@ const express = require('express')
 const crypto = require('crypto') // Used for generating mock transaction hashes
 const ethers = require('ethers')
 const { nanoid } = require('nanoid')
+const path = require('path'); // Ensure path module is required
 
 // Database interactions
 const db = require('./database');
@@ -13,6 +14,18 @@ const { createLinkOnChain, setLinkActivityOnChain } = require('./blockchain')
 
 const app = express()
 const port = process.env.PORT || 3000
+
+// Serve apple-app-site-association with correct content type
+app.get('/.well-known/apple-app-site-association', (req, res) => {
+	res.type('application/json');
+	res.sendFile(path.join(__dirname, 'public', 'apple-app-site-association'));
+});
+
+// Serve apple-app-site-association at root for flexibility (some CDNs/proxies might not serve .well-known correctly)
+app.get('/apple-app-site-association', (req, res) => {
+	res.type('application/json');
+	res.sendFile(path.join(__dirname, 'public', 'apple-app-site-association'));
+});
 
 app.use(express.json()) // Middleware to parse JSON request bodies
 app.use(express.static('public')); // Serve static files from 'public' directory
