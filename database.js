@@ -200,9 +200,8 @@ async function updateLinkStatus(linkHash, isActive, statusUpdateTxHash) {
 
 /**
  * Retrieves links for a specific creator.
- * Also retrieves the total count of links for that creator.
  * @param {string} creatorAddress The wallet address of the creator.
- * @returns {Promise<{links: Array<object>, totalMatches: number}>} An object containing the list of links and the total count.
+ * @returns {Promise<Array<object>>} A promise that resolves to an array of link objects.
  */
 async function getLinksByCreator(creatorAddress) {
   const normalizedCreatorAddress = creatorAddress ? creatorAddress.toLowerCase() : null;
@@ -212,15 +211,13 @@ async function getLinksByCreator(creatorAddress) {
     WHERE creator_address = ?
     ORDER BY created_at DESC;
   `;
-  const countSql = `SELECT COUNT(*) as totalMatches FROM GatedLinks WHERE creator_address = ?;`;
 
   try {
-    const countRow = await dbGet(countSql, [normalizedCreatorAddress]);
-    const totalMatches = countRow ? countRow.totalMatches : 0;
     const links = await dbAll(linksSql, [normalizedCreatorAddress]);
-    return { links: links || [], totalMatches };
+    return links || []; // Return an empty array if no links are found
   } catch (err) {
-    console.error('Error fetching links for getLinksByCreator:', err.message);
+    // Error already logged by dbAll helper
+    console.error('Error fetching links for getLinksByCreator:', err.message); // Added for specific context
     throw err;
   }
 }

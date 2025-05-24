@@ -267,7 +267,7 @@ app.get('/links/creator/:creatorAddress', async (req, res) => {
 	creatorAddress = creatorAddress.toLowerCase();
 
 	try {
-		const { links, totalMatches } = await db.getLinksByCreator(creatorAddress);
+		const links = await db.getLinksByCreator(creatorAddress);
 		
 		const formattedLinks = links.map(link => {
 			const shareableBuyLink = `${GIVABIT_BASE_URL}/buy/${link.buy_short_code}`;
@@ -289,8 +289,7 @@ app.get('/links/creator/:creatorAddress', async (req, res) => {
 		});
 
 		res.status(200).json({
-			links: formattedLinks,
-			totalLinks: totalMatches // Renamed for clarity since there is no pagination object anymore
+			links: formattedLinks
 		});
 	} catch (error) {
 		console.error(`Error fetching links for creator ${creatorAddress}:`, error);
