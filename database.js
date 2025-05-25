@@ -9,7 +9,7 @@ const pool = new Pool({
   database: process.env.PGDATABASE || 'givabit_db', // Replace with your PG database name or env var
   password: process.env.PGPASSWORD || 'your_pg_password', // Replace with your PG password or env var
   port: parseInt(process.env.PGPORT) || 5432,          // Replace with your PG port or env var, ensure it's an integer
-  ssl: { rejectUnauthorized: true }, // Corrected SSL configuration to be an object
+  ssl: { rejectUnauthorized: false }, // Allow self-signed certificates (less secure)
 });
 
 pool.on('connect', () => {
