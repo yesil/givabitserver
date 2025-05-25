@@ -9,29 +9,15 @@ const pool = new Pool({
   database: process.env.PGDATABASE || 'givabit_db', // Replace with your PG database name or env var
   password: process.env.PGPASSWORD || 'your_pg_password', // Replace with your PG password or env var
   port: parseInt(process.env.PGPORT) || 5432,          // Replace with your PG port or env var, ensure it's an integer
-  ssl: 'require',
+  ssl: 'require', // User directly set SSL to require
 });
-
-// Add SSL configuration based on PGSSLMODE and NODE_ENV
-if (process.env.PGSSLMODE) {
-  if (process.env.PGSSLMODE.toLowerCase() === 'disable') {
-    pool.options.ssl = false;
-  } else if (process.env.PGSSLMODE.toLowerCase() === 'no-verify') {
-    pool.options.ssl = { rejectUnauthorized: false };
-  } else {
-    pool.options.ssl = { rejectUnauthorized: true }; // For 'require', 'allow', 'prefer' etc.
-  }
-} else if (process.env.NODE_ENV === 'production') {
-  // Default to secure SSL in production if PGSSLMODE is not explicitly set
-  pool.options.ssl = { rejectUnauthorized: true };
-}
 
 pool.on('connect', () => {
   console.log('Connected to the PostgreSQL database.');
 });
 
 pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
+  console.error('Unexpected error on idle client. Stack:', err.stack);
   process.exit(-1); // Exit if we can't connect/stay connected to DB
 });
 
@@ -90,7 +76,7 @@ async function initializeDb() {
     console.log('GatedLinks updated_at trigger checked/created successfully.');
 
   } catch (err) {
-    console.error('Error during DB initialization:', err.message);
+    console.error('Error during DB initialization. Message:', err.message, 'Stack:', err.stack);
     throw err;
   } finally {
     client.release();
@@ -130,7 +116,7 @@ async function storeGatedLink(linkData) {
     const result = await pool.query(sql, params);
     return result.rows[0].id; // PostgreSQL returns the id in rows[0].id
   } catch (err) {
-    console.error('Error storing gated link:', err.message, 'SQL:', sql, 'Params:', params);
+    console.error('Error storing gated link. Message:', err.message, 'SQL:', sql, 'Params:', params, 'Stack:', err.stack);
     throw err;
   }
 }
@@ -146,7 +132,7 @@ async function getLinkByAccessShortCode(accessShortCode) {
     const result = await pool.query(sql, [accessShortCode]);
     return result.rows[0] || null; // result.rows is an array, take the first element or null
   } catch (err) {
-    console.error('Error fetching link by access_short_code:', err.message, 'SQL:', sql, 'Params:', [accessShortCode]);
+    console.error('Error fetching link by access_short_code. Message:', err.message, 'SQL:', sql, 'Params:', [accessShortCode], 'Stack:', err.stack);
     throw err;
   }
 }
@@ -162,7 +148,7 @@ async function getLinkByBuyShortCode(buyShortCode) {
     const result = await pool.query(sql, [buyShortCode]);
     return result.rows[0] || null;
   } catch (err) {
-    console.error('Error fetching link by buy_short_code:', err.message, 'SQL:', sql, 'Params:', [buyShortCode]);
+    console.error('Error fetching link by buy_short_code. Message:', err.message, 'SQL:', sql, 'Params:', [buyShortCode], 'Stack:', err.stack);
     throw err;
   }
 }
@@ -178,7 +164,7 @@ async function getLinkByHash(linkHash) {
     const result = await pool.query(sql, [linkHash]);
     return result.rows[0] || null;
   } catch (err) {
-    console.error('Error fetching link by link_hash:', err.message, 'SQL:', sql, 'Params:', [linkHash]);
+    console.error('Error fetching link by link_hash. Message:', err.message, 'SQL:', sql, 'Params:', [linkHash], 'Stack:', err.stack);
     throw err;
   }
 }
@@ -197,7 +183,7 @@ async function updateLinkStatus(linkHash, isActive, statusUpdateTxHash) {
     const result = await pool.query(sql, [isActive, statusUpdateTxHash, linkHash]);
     return result.rowCount; // rowCount gives the number of affected rows in pg
   } catch (err) {
-    console.error('Error updating link status:', err.message, 'SQL:', sql, 'Params:', [isActive, statusUpdateTxHash, linkHash]);
+    console.error('Error updating link status. Message:', err.message, 'SQL:', sql, 'Params:', [isActive, statusUpdateTxHash, linkHash], 'Stack:', err.stack);
     throw err;
   }
 }
@@ -220,7 +206,7 @@ async function getLinksByCreator(creatorAddress) {
     const result = await pool.query(linksSql, [normalizedCreatorAddress]);
     return result.rows || []; // result.rows is the array of rows
   } catch (err) {
-    console.error('Error fetching links for getLinksByCreator:', err.message, 'SQL:', linksSql, 'Params:', [normalizedCreatorAddress]);
+    console.error('Error fetching links for getLinksByCreator. Message:', err.message, 'SQL:', linksSql, 'Params:', [normalizedCreatorAddress], 'Stack:', err.stack);
     throw err;
   }
 }
