@@ -1,117 +1,120 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const { Pool } = require('pg');
+const path = require('path'); // path might not be needed for DB_PATH anymore
 
-const DB_PATH = path.join(__dirname, 'givabit.db');
-
-const db = new sqlite3.Database(DB_PATH, (err) => {
-  if (err) {
-    console.error('Error opening database', err.message);
-    throw err;
-  } else {
-    console.log('Connected to the SQLite database.');
-    initializeDb().catch(initErr => {
-      console.error('Failed to initialize database:', initErr.message);
-    });
-  }
+// PostgreSQL connection configuration
+// It's highly recommended to use environment variables for these settings
+const pool = new Pool({
+  user: process.env.PGUSER || 'your_pg_user', // Replace with your PG user or env var
+  host: process.env.PGHOST || 'localhost',    // Replace with your PG host or env var
+  database: process.env.PGDATABASE || 'givabit_db', // Replace with your PG database name or env var
+  password: process.env.PGPASSWORD || 'your_pg_password', // Replace with your PG password or env var
+  port: parseInt(process.env.PGPORT) || 5432,          // Replace with your PG port or env var, ensure it's an integer
+  ssl: 'require',
 });
 
-// Promisified DB helpers
-function dbRun(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) {
-        console.error('Error running SQL:', err.message, '\nSQL:', sql, '\nParams:', params);
-        reject(err);
-      } else {
-        resolve(this);
-      }
-    });
-  });
+// Add SSL configuration based on PGSSLMODE and NODE_ENV
+if (process.env.PGSSLMODE) {
+  if (process.env.PGSSLMODE.toLowerCase() === 'disable') {
+    pool.options.ssl = false;
+  } else if (process.env.PGSSLMODE.toLowerCase() === 'no-verify') {
+    pool.options.ssl = { rejectUnauthorized: false };
+  } else {
+    pool.options.ssl = { rejectUnauthorized: true }; // For 'require', 'allow', 'prefer' etc.
+  }
+} else if (process.env.NODE_ENV === 'production') {
+  // Default to secure SSL in production if PGSSLMODE is not explicitly set
+  pool.options.ssl = { rejectUnauthorized: true };
 }
 
-function dbGet(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => {
-      if (err) {
-        console.error('Error running SQL GET:', err.message, '\nSQL:', sql, '\nParams:', params);
-        reject(err);
-      } else {
-        resolve(row);
-      }
-    });
-  });
-}
+pool.on('connect', () => {
+  console.log('Connected to the PostgreSQL database.');
+});
 
-function dbAll(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) {
-        console.error('Error running SQL ALL:', err.message, '\nSQL:', sql, '\nParams:', params);
-        reject(err);
-      } else {
-        resolve(rows);
-      }
-    });
-  });
-}
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client', err);
+  process.exit(-1); // Exit if we can't connect/stay connected to DB
+});
 
+// Initialize DB (check connection and create table if not exists)
 async function initializeDb() {
-  const createTableSql = `
-    CREATE TABLE IF NOT EXISTS GatedLinks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      original_url TEXT NOT NULL,
-      link_hash TEXT NOT NULL UNIQUE,      -- This is the linkId from the smart contract
-      buy_short_code TEXT NOT NULL UNIQUE, -- For the link that initiates purchase
-      access_short_code TEXT NOT NULL UNIQUE, -- For direct content access post-payment
-      title TEXT,                          -- Title for the link
-      creator_address TEXT NOT NULL,
-      price_in_erc20 TEXT NOT NULL,
-      tx_hash TEXT,                       -- Transaction hash of the createLink call
-      status_update_tx_hash TEXT,         -- Transaction hash of the last setLinkActivity call
-      is_active BOOLEAN NOT NULL DEFAULT TRUE, -- Reflects the link's status on the smart contract
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-  `;
-
-  // Trigger for updated_at
-  const createTriggerSql = `
-    CREATE TRIGGER IF NOT EXISTS set_timestamp_gatedlinks
-    AFTER UPDATE ON GatedLinks
-    FOR EACH ROW
-    BEGIN
-      UPDATE GatedLinks SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
-    END;
-  `;
-
+  const client = await pool.connect();
   try {
-    await dbRun(createTableSql);
+    // PostgreSQL uses SERIAL for auto-incrementing primary keys
+    // TEXT for strings, VARCHAR for limited strings, TIMESTAMPTZ for timezone-aware timestamps
+    // UNIQUE constraint for link_hash, buy_short_code, access_short_code
+    // Default value for is_active
+    // created_at and updated_at with default CURRENT_TIMESTAMP
+    const createTableSql = `
+      CREATE TABLE IF NOT EXISTS GatedLinks (
+        id SERIAL PRIMARY KEY,
+        original_url TEXT NOT NULL,
+        link_hash TEXT NOT NULL UNIQUE,
+        buy_short_code TEXT NOT NULL UNIQUE,
+        access_short_code TEXT NOT NULL UNIQUE,
+        title TEXT,
+        creator_address TEXT NOT NULL,
+        price_in_erc20 TEXT NOT NULL,
+        tx_hash TEXT,
+        status_update_tx_hash TEXT,
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      );
+    `;
+
+    // Trigger for updated_at on PostgreSQL
+    // We need a function and then a trigger
+    const createFunctionSql = `
+      CREATE OR REPLACE FUNCTION update_updated_at_column()
+      RETURNS TRIGGER AS $$
+      BEGIN
+         NEW.updated_at = CURRENT_TIMESTAMP;
+         RETURN NEW;
+      END;
+      $$ language 'plpgsql';
+    `;
+
+    const createTriggerSql = `
+      DROP TRIGGER IF EXISTS set_timestamp_gatedlinks ON GatedLinks; -- Drop if exists to avoid error
+      CREATE TRIGGER set_timestamp_gatedlinks
+      BEFORE UPDATE ON GatedLinks
+      FOR EACH ROW
+      EXECUTE FUNCTION update_updated_at_column();
+    `;
+
+    await client.query(createTableSql);
     console.log('GatedLinks table checked/created successfully.');
-    await dbRun(createTriggerSql);
+    await client.query(createFunctionSql);
+    console.log('update_updated_at_column function checked/created successfully.');
+    await client.query(createTriggerSql);
     console.log('GatedLinks updated_at trigger checked/created successfully.');
+
   } catch (err) {
     console.error('Error during DB initialization:', err.message);
     throw err;
+  } finally {
+    client.release();
   }
 }
+
+// Call initializeDb when the module is loaded
+initializeDb().catch(initErr => {
+  console.error('Failed to initialize database on load:', initErr.message);
+  // Depending on the severity, you might want to process.exit() here if DB is critical
+});
+
 
 /**
  * Stores a new gated link in the database.
  * @param {object} linkData
- * @param {string} linkData.original_url
- * @param {string} linkData.link_hash
- * @param {string} linkData.buy_short_code
- * @param {string} linkData.access_short_code
- * @param {string} linkData.title
- * @param {string} linkData.creator_address
- * @param {string} linkData.price_in_erc20
- * @param {string} linkData.tx_hash
- * @param {boolean} linkData.is_active
  * @returns {Promise<number>} The ID of the newly inserted row.
  */
 async function storeGatedLink(linkData) {
+  // In PostgreSQL, query parameters are $1, $2, etc.
+  // The RETURNING id clause gets the id of the inserted row.
   const sql = `INSERT INTO GatedLinks (original_url, link_hash, buy_short_code, access_short_code, title, creator_address, price_in_erc20, tx_hash, is_active)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+               RETURNING id`;
   const params = [
     linkData.original_url,
     linkData.link_hash,
@@ -124,10 +127,10 @@ async function storeGatedLink(linkData) {
     linkData.is_active === undefined ? true : linkData.is_active,
   ];
   try {
-    const result = await dbRun(sql, params);
-    return result.lastID;
+    const result = await pool.query(sql, params);
+    return result.rows[0].id; // PostgreSQL returns the id in rows[0].id
   } catch (err) {
-    console.error('Error storing gated link:', err.message);
+    console.error('Error storing gated link:', err.message, 'SQL:', sql, 'Params:', params);
     throw err;
   }
 }
@@ -138,12 +141,12 @@ async function storeGatedLink(linkData) {
  * @returns {Promise<object|null>} The link data or null if not found.
  */
 async function getLinkByAccessShortCode(accessShortCode) {
-  const sql = `SELECT * FROM GatedLinks WHERE access_short_code = ?`;
+  const sql = `SELECT * FROM GatedLinks WHERE access_short_code = $1`;
   try {
-    const row = await dbGet(sql, [accessShortCode]);
-    return row || null;
+    const result = await pool.query(sql, [accessShortCode]);
+    return result.rows[0] || null; // result.rows is an array, take the first element or null
   } catch (err) {
-    console.error('Error fetching link by access_short_code:', err.message);
+    console.error('Error fetching link by access_short_code:', err.message, 'SQL:', sql, 'Params:', [accessShortCode]);
     throw err;
   }
 }
@@ -154,12 +157,12 @@ async function getLinkByAccessShortCode(accessShortCode) {
  * @returns {Promise<object|null>} The link data or null if not found.
  */
 async function getLinkByBuyShortCode(buyShortCode) {
-  const sql = `SELECT * FROM GatedLinks WHERE buy_short_code = ?`;
+  const sql = `SELECT * FROM GatedLinks WHERE buy_short_code = $1`;
   try {
-    const row = await dbGet(sql, [buyShortCode]);
-    return row || null;
+    const result = await pool.query(sql, [buyShortCode]);
+    return result.rows[0] || null;
   } catch (err) {
-    console.error('Error fetching link by buy_short_code:', err.message);
+    console.error('Error fetching link by buy_short_code:', err.message, 'SQL:', sql, 'Params:', [buyShortCode]);
     throw err;
   }
 }
@@ -170,12 +173,12 @@ async function getLinkByBuyShortCode(buyShortCode) {
  * @returns {Promise<object|null>} The link data or null if not found.
  */
 async function getLinkByHash(linkHash) {
-  const sql = `SELECT * FROM GatedLinks WHERE link_hash = ?`;
+  const sql = `SELECT * FROM GatedLinks WHERE link_hash = $1`;
   try {
-    const row = await dbGet(sql, [linkHash]);
-    return row || null;
+    const result = await pool.query(sql, [linkHash]);
+    return result.rows[0] || null;
   } catch (err) {
-    console.error('Error fetching link by link_hash:', err.message);
+    console.error('Error fetching link by link_hash:', err.message, 'SQL:', sql, 'Params:', [linkHash]);
     throw err;
   }
 }
@@ -188,12 +191,13 @@ async function getLinkByHash(linkHash) {
  * @returns {Promise<number>} The number of rows updated.
  */
 async function updateLinkStatus(linkHash, isActive, statusUpdateTxHash) {
-  const sql = `UPDATE GatedLinks SET is_active = ?, status_update_tx_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE link_hash = ?`;
+  // The status_update_tx_hash is set, and updated_at will be handled by the trigger
+  const sql = `UPDATE GatedLinks SET is_active = $1, status_update_tx_hash = $2 WHERE link_hash = $3`;
   try {
-    const result = await dbRun(sql, [isActive, statusUpdateTxHash, linkHash]);
-    return result.changes;
+    const result = await pool.query(sql, [isActive, statusUpdateTxHash, linkHash]);
+    return result.rowCount; // rowCount gives the number of affected rows in pg
   } catch (err) {
-    console.error('Error updating link status:', err.message);
+    console.error('Error updating link status:', err.message, 'SQL:', sql, 'Params:', [isActive, statusUpdateTxHash, linkHash]);
     throw err;
   }
 }
@@ -208,26 +212,27 @@ async function getLinksByCreator(creatorAddress) {
   const linksSql = `
     SELECT id, original_url, link_hash, buy_short_code, access_short_code, title, creator_address, price_in_erc20, tx_hash, status_update_tx_hash, is_active, created_at, updated_at
     FROM GatedLinks
-    WHERE creator_address = ?
+    WHERE creator_address = $1
     ORDER BY created_at DESC;
   `;
 
   try {
-    const links = await dbAll(linksSql, [normalizedCreatorAddress]);
-    return links || []; // Return an empty array if no links are found
+    const result = await pool.query(linksSql, [normalizedCreatorAddress]);
+    return result.rows || []; // result.rows is the array of rows
   } catch (err) {
-    // Error already logged by dbAll helper
-    console.error('Error fetching links for getLinksByCreator:', err.message); // Added for specific context
+    console.error('Error fetching links for getLinksByCreator:', err.message, 'SQL:', linksSql, 'Params:', [normalizedCreatorAddress]);
     throw err;
   }
 }
 
 module.exports = {
-  initializeDb,
+  // initializeDb, // Not typically exported directly, called on module load
   storeGatedLink,
   getLinkByAccessShortCode,
   getLinkByBuyShortCode,
   getLinkByHash,
   updateLinkStatus,
-  getLinksByCreator
+  getLinksByCreator,
+  // Export pool if direct access is needed elsewhere, though usually not recommended
+  // pool 
 }; 
