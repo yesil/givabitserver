@@ -9,7 +9,7 @@ const pool = new Pool({
   database: process.env.PGDATABASE || 'givabit_db', // Replace with your PG database name or env var
   password: process.env.PGPASSWORD || 'your_pg_password', // Replace with your PG password or env var
   port: parseInt(process.env.PGPORT) || 5432,          // Replace with your PG port or env var, ensure it's an integer
-  ssl: 'require', // User directly set SSL to require
+  ssl: { rejectUnauthorized: true }, // Corrected SSL configuration to be an object
 });
 
 pool.on('connect', () => {
@@ -23,8 +23,9 @@ pool.on('error', (err) => {
 
 // Initialize DB (check connection and create table if not exists)
 async function initializeDb() {
-  const client = await pool.connect();
+  let client; // Declare client outside try to check it in catch/finally
   try {
+    client = await pool.connect();
     // PostgreSQL uses SERIAL for auto-incrementing primary keys
     // TEXT for strings, VARCHAR for limited strings, TIMESTAMPTZ for timezone-aware timestamps
     // UNIQUE constraint for link_hash, buy_short_code, access_short_code
@@ -77,9 +78,14 @@ async function initializeDb() {
 
   } catch (err) {
     console.error('Error during DB initialization. Message:', err.message, 'Stack:', err.stack);
-    throw err;
+    if (!client) {
+        console.error('DB Initialization Error Insight: Failed to acquire client from pool. This strongly suggests a connection or configuration issue (credentials, host, port, SSL, firewall/trusted sources, or DB not ready).');
+    }
+    throw err; // Re-throw the original error
   } finally {
-    client.release();
+    if (client) { // Check if client was successfully acquired before releasing
+      client.release();
+    }
   }
 }
 
