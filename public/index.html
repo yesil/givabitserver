@@ -156,6 +156,21 @@
         </div>
     </div>
 
+    <!-- Test Metadata Endpoint -->
+    <div class="container">
+        <h2>7. Test Metadata Endpoint</h2>
+        <p class="endpoint">GET /metadata/{link_hash}</p>
+        <form id="testMetadataForm">
+            <label for="linkHashMetadata">Link Hash (linkId):</label>
+            <input type="text" id="linkHashMetadata" name="linkHashMetadata" placeholder="0xLinkHashToTest" required>
+            <button type="submit">Test Metadata</button>
+        </form>
+        <div class="response-area">
+            <h3>Response:</h3>
+            <pre id="testMetadataResponse">Awaiting submission...</pre>
+        </div>
+    </div>
+
     <script>
         const API_BASE_URL = window.location.origin;
         let currentBtcPriceInUSD = null;
@@ -369,6 +384,27 @@
                 displayResponse('getInfoByBuyCodeResponse', result);
             } catch (error) {
                 displayError('getInfoByBuyCodeResponse', error, error.status);
+            }
+        });
+
+        // 7. Test Metadata Endpoint
+        document.getElementById('testMetadataForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const linkHash = document.getElementById('linkHashMetadata').value;
+            
+            if (!linkHash) {
+                displayError('testMetadataResponse', { message: 'Link Hash is required.' });
+                return;
+            }
+            document.getElementById('testMetadataResponse').textContent = 'Processing...';
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/metadata/${encodeURIComponent(linkHash)}`);
+                const result = await response.json();
+                if (!response.ok) throw {...result, message: result.error || `HTTP error ${response.status}`};
+                displayResponse('testMetadataResponse', result);
+            } catch (error) {
+                displayError('testMetadataResponse', error, error.status);
             }
         });
 

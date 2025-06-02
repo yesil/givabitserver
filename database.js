@@ -1,5 +1,6 @@
 const { Pool } = require('pg');
-const path = require('path'); // path might not be needed for DB_PATH anymore
+const fs = require('fs').promises; // For reading migration files
+const path = require('path');
 
 // PostgreSQL connection configuration
 // It's highly recommended to use environment variables for these settings
@@ -23,15 +24,12 @@ pool.on('error', (err) => {
 
 // Initialize DB (check connection and create table if not exists)
 async function initializeDb() {
-  let client; // Declare client outside try to check it in catch/finally
+  let client;
   try {
     client = await pool.connect();
-    // PostgreSQL uses SERIAL for auto-incrementing primary keys
-    // TEXT for strings, VARCHAR for limited strings, TIMESTAMPTZ for timezone-aware timestamps
-    // UNIQUE constraint for link_hash, buy_short_code, access_short_code
-    // Default value for is_active
-    // created_at and updated_at with default CURRENT_TIMESTAMP
-    const createTableSql = `
+
+    // 1. Ensure GatedLinks table exists (basic structure)
+    const createGatedLinksTableSql = `
       CREATE TABLE IF NOT EXISTS GatedLinks (
         id SERIAL PRIMARY KEY,
         original_url TEXT NOT NULL,
@@ -48,6 +46,76 @@ async function initializeDb() {
         updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       );
     `;
+    await client.query(createGatedLinksTableSql);
+    console.log('GatedLinks table schema base checked/created successfully.');
+
+    // 2. Ensure schema_version table exists
+    const createSchemaVersionTableSql = `
+      CREATE TABLE IF NOT EXISTS schema_version (
+        id INT PRIMARY KEY DEFAULT 1, -- Only one row
+        version INT NOT NULL DEFAULT 0
+      );
+    `;
+    await client.query(createSchemaVersionTableSql);
+    console.log('schema_version table checked/created successfully.');
+
+    // Insert initial version if table was just created and is empty
+    const ensureInitialVersionSql = `
+      INSERT INTO schema_version (id, version) VALUES (1, 0)
+      ON CONFLICT (id) DO NOTHING;
+    `;
+    await client.query(ensureInitialVersionSql);
+
+    // 3. Get current schema version
+    const { rows: versionRows } = await client.query('SELECT version FROM schema_version WHERE id = 1;');
+    let currentVersion = 0;
+    if (versionRows.length > 0) {
+      currentVersion = versionRows[0].version;
+    }
+    console.log(`Current DB schema version: ${currentVersion}`);
+
+    // 4. Read migration files
+    const migrationsDir = path.join(__dirname, 'migrations');
+    let migrationFiles = [];
+    try {
+      migrationFiles = await fs.readdir(migrationsDir);
+      migrationFiles = migrationFiles
+        .filter(file => file.endsWith('.sql'))
+        .sort((a, b) => parseInt(a.split('_')[0]) - parseInt(b.split('_')[0])); // Sort by numeric prefix
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        console.log('No migrations directory found, skipping migrations.');
+      } else {
+        throw err; // Re-throw other errors
+      }
+    }
+    
+
+    // 5. Apply pending migrations
+    for (const file of migrationFiles) {
+      const fileVersion = parseInt(file.split('_')[0]);
+      if (fileVersion > currentVersion) {
+        console.log(`Applying migration: ${file}...`);
+        const filePath = path.join(migrationsDir, file);
+        const sqlScript = await fs.readFile(filePath, 'utf-8');
+        
+        // Execute the migration script (can contain multiple statements)
+        // For simplicity, assuming scripts don't need complex transaction management here.
+        // For production, you might want BEGIN; ... COMMIT/ROLLBACK per file.
+        await client.query(sqlScript); 
+        
+        // Update schema version in DB
+        await client.query('UPDATE schema_version SET version = $1 WHERE id = 1;', [fileVersion]);
+        console.log(`Migration ${file} applied. DB schema version updated to ${fileVersion}.`);
+        currentVersion = fileVersion; // Update in-memory currentVersion
+      } else {
+        console.log(`Migration ${file} (version ${fileVersion}) already applied or is older, skipping.`);
+      }
+    }
+
+    if (migrationFiles.length === 0) {
+        console.log('No migration files found in migrations directory.');
+    }
 
     // Trigger for updated_at on PostgreSQL
     // We need a function and then a trigger
@@ -69,8 +137,6 @@ async function initializeDb() {
       EXECUTE FUNCTION update_updated_at_column();
     `;
 
-    await client.query(createTableSql);
-    console.log('GatedLinks table checked/created successfully.');
     await client.query(createFunctionSql);
     console.log('update_updated_at_column function checked/created successfully.');
     await client.query(createTriggerSql);
@@ -104,8 +170,12 @@ initializeDb().catch(initErr => {
 async function storeGatedLink(linkData) {
   // In PostgreSQL, query parameters are $1, $2, etc.
   // The RETURNING id clause gets the id of the inserted row.
-  const sql = `INSERT INTO GatedLinks (original_url, link_hash, buy_short_code, access_short_code, title, creator_address, price_in_erc20, tx_hash, is_active)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+  const sql = `INSERT INTO GatedLinks (
+                 original_url, link_hash, buy_short_code, access_short_code, title, 
+                 creator_address, price_in_erc20, tx_hash, is_active,
+                 description, author_name, author_profile_picture_url, content_vignette_url, publication_date, extracted_metadata
+               )
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                RETURNING id`;
   const params = [
     linkData.original_url,
@@ -117,6 +187,12 @@ async function storeGatedLink(linkData) {
     linkData.price_in_erc20,
     linkData.tx_hash,
     linkData.is_active === undefined ? true : linkData.is_active,
+    linkData.description,
+    linkData.author_name,
+    linkData.author_profile_picture_url,
+    linkData.content_vignette_url,
+    linkData.publication_date,
+    linkData.extracted_metadata ? JSON.stringify(linkData.extracted_metadata) : null // Ensure metadata is stringified if it's an object
   ];
   try {
     const result = await pool.query(sql, params);
@@ -202,7 +278,11 @@ async function updateLinkStatus(linkHash, isActive, statusUpdateTxHash) {
 async function getLinksByCreator(creatorAddress) {
   const normalizedCreatorAddress = creatorAddress ? creatorAddress.toLowerCase() : null;
   const linksSql = `
-    SELECT id, original_url, link_hash, buy_short_code, access_short_code, title, creator_address, price_in_erc20, tx_hash, status_update_tx_hash, is_active, created_at, updated_at
+    SELECT 
+      id, original_url, link_hash, buy_short_code, access_short_code, title, 
+      creator_address, price_in_erc20, tx_hash, status_update_tx_hash, is_active, 
+      description, author_name, author_profile_picture_url, content_vignette_url, publication_date, extracted_metadata,
+      created_at, updated_at
     FROM GatedLinks
     WHERE creator_address = $1
     ORDER BY created_at DESC;
@@ -217,6 +297,32 @@ async function getLinksByCreator(creatorAddress) {
   }
 }
 
+async function updateLinkMetadata(linkHash, metadata) {
+  const sql = `UPDATE GatedLinks SET 
+                 title = $1, description = $2, author_name = $3, 
+                 author_profile_picture_url = $4, content_vignette_url = $5, 
+                 publication_date = $6, extracted_metadata = $7,
+                 updated_at = CURRENT_TIMESTAMP 
+               WHERE link_hash = $8`;
+  const params = [
+    metadata.title,
+    metadata.description,
+    metadata.author_name,
+    metadata.author_profile_picture_url,
+    metadata.content_vignette_url,
+    metadata.publication_date,
+    metadata.extracted_metadata ? JSON.stringify(metadata.extracted_metadata) : null,
+    linkHash
+  ];
+  try {
+    const result = await pool.query(sql, params);
+    return result.rowCount;
+  } catch (err) {
+    console.error('Error updating link metadata. Message:', err.message, 'SQL:', sql, 'Params:', params, 'Stack:', err.stack);
+    throw err;
+  }
+}
+
 module.exports = {
   // initializeDb, // Not typically exported directly, called on module load
   storeGatedLink,
@@ -225,6 +331,7 @@ module.exports = {
   getLinkByHash,
   updateLinkStatus,
   getLinksByCreator,
+  updateLinkMetadata, // Export the new function
   // Export pool if direct access is needed elsewhere, though usually not recommended
   // pool 
 }; 

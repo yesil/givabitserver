@@ -5,6 +5,8 @@ const crypto = require('crypto') // Used for generating mock transaction hashes
 const ethers = require('ethers')
 const { nanoid } = require('nanoid')
 const path = require('path'); // Ensure path module is required
+const playwright = require('playwright');
+const { google } = require('googleapis');
 
 // Database interactions
 const db = require('./database');
@@ -31,6 +33,12 @@ app.use(express.json()) // Middleware to parse JSON request bodies
 app.use(express.static('public')); // Serve static files from 'public' directory
 
 const GIVABIT_BASE_URL = process.env.GIVABIT_APP_URL || 'https://givabit-server-krlus.ondigitalocean.app'
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+
+const youtube = google.youtube({
+    version: 'v3',
+    auth: YOUTUBE_API_KEY,
+});
 
 /**
  * Generates a keccak256 hash for a given string (URL).
@@ -351,6 +359,214 @@ app.get('/info/:buy_short_code', async (req, res) => {
 	}
 });
 
+// --- Helper functions for metadata extraction ---
+
+async function getYoutubeVideoDetails(youtubeUrl) {
+    try {
+        const videoId = extractYoutubeVideoId(youtubeUrl);
+        if (!videoId) {
+            throw new Error('Invalid YouTube URL or unable to extract video ID.');
+        }
+
+        if (!YOUTUBE_API_KEY) {
+            console.warn('YOUTUBE_API_KEY not configured. Cannot fetch YouTube video details.');
+            return {
+                title: 'YouTube Video (ID: ' + videoId + ')',
+                description: 'API key not configured to fetch full details.',
+            };
+        }
+
+        const response = await youtube.videos.list({
+            part: 'snippet,contentDetails',
+            id: videoId,
+        });
+
+        if (!response.data.items || response.data.items.length === 0) {
+            throw new Error('Video not found or API error.');
+        }
+
+        const video = response.data.items[0];
+        const snippet = video.snippet;
+        // const contentDetails = video.contentDetails; // Contains duration, dimension etc.
+
+        const thumbnails = snippet.thumbnails;
+        const thumbnailUrl = thumbnails.maxres?.url || thumbnails.high?.url || thumbnails.medium?.url || thumbnails.default?.url;
+
+        return {
+            title: snippet.title,
+            description: snippet.description,
+            author_name: snippet.channelTitle,
+            // author_profile_picture_url: null, // YouTube API for videos doesn't directly give channel profile pic. Need separate channels.list call.
+            content_vignette_url: thumbnailUrl,
+            publication_date: snippet.publishedAt ? new Date(snippet.publishedAt) : null,
+            // extracted_metadata: { duration: contentDetails.duration } // Example
+        };
+    } catch (error) {
+        console.error(`Error fetching YouTube video details for ${youtubeUrl}:`, error.message);
+        // Return a generic title if API fails or videoId is bad
+        const videoId = extractYoutubeVideoId(youtubeUrl) || 'unknown_id';
+        return {
+            title: `YouTube Video (ID: ${videoId})`,
+            description: `Could not fetch details: ${error.message}`,
+        };
+    }
+}
+
+function extractYoutubeVideoId(url) {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+}
+
+async function getGenericPageMetadata(url) {
+    let browser = null;
+    try {
+        // Launch browser. Chromium is generally well-supported.
+        // You might need to install browser binaries if they are not found: npx playwright install
+        browser = await playwright.chromium.launch({ headless: true });
+        const context = await browser.newContext({
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        });
+        const page = await context.newPage();
+        await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 }); // Wait for network to be idle, timeout after 30s
+
+        const metadata = await page.evaluate(() => {
+            const getMetaContent = (name) => {
+                const element = document.querySelector(`meta[name="${name}"]`) || document.querySelector(`meta[property="${name}"]`);
+                return element ? element.content : null;
+            };
+
+            let title = getMetaContent('og:title') || getMetaContent('twitter:title') || document.title;
+            let description = getMetaContent('og:description') || getMetaContent('twitter:description') || getMetaContent('description');
+            let authorName = getMetaContent('author') || getMetaContent('og:site_name'); // or specific author tags if known
+            let profilePicUrl = getMetaContent('og:image:secure_url') || getMetaContent('og:image') || getMetaContent('twitter:image'); // This is often content image, not author profile
+            let contentVignetteUrl = profilePicUrl; // Reuse, or look for specific article image
+            let publicationDate = getMetaContent('article:published_time') || getMetaContent('og:updated_time');
+
+            // Try to clean up title and description
+            if (title) title = title.trim();
+            if (description) description = description.trim();
+            if (authorName) authorName = authorName.trim();
+
+
+            // More specific selectors if needed:
+            // Example: const h1Title = document.querySelector('h1')?.innerText;
+            // if (!title && h1Title) title = h1Title;
+
+            return {
+                title: title || 'Untitled Page',
+                description: description,
+                author_name: authorName,
+                author_profile_picture_url: null, // Hard to get reliably without specific site knowledge or more complex scraping
+                content_vignette_url: contentVignetteUrl,
+                publication_date: publicationDate ? new Date(publicationDate) : null,
+                // extracted_metadata: {} // For additional fields
+            };
+        });
+
+        await browser.close();
+        return metadata;
+
+    } catch (error) {
+        console.error(`Playwright - Error fetching generic page metadata for ${url}:`, error.message);
+        if (browser) {
+            await browser.close();
+        }
+        return {
+            title: `Web Page at ${url.substring(0,50)}...`, // Truncate long URLs
+            description: `Could not fetch details: ${error.message}`,
+        };
+    }
+}
+
+// --- New Metadata Endpoint ---
+app.get('/metadata/:link_hash', async (req, res) => {
+    const { link_hash } = req.params;
+
+    try {
+        const link = await db.getLinkByHash(link_hash);
+        if (!link) {
+            return res.status(404).json({ error: 'Link not found with the provided hash.' });
+        }
+
+        // Check if metadata already exists and is recent enough (e.g., less than 24 hours old)
+        // For simplicity, we'll always re-fetch for now, but caching would be good.
+        // const metadataIsRecent = link.updated_at && (new Date() - new Date(link.updated_at)) < 24 * 60 * 60 * 1000;
+        // if (link.title && link.description && metadataIsRecent) { // Basic check
+        //    return res.status(200).json({ /* ... existing link data ... */ });
+        // }
+        
+        let extractedData = {};
+        const originalUrl = link.original_url;
+
+        if (extractYoutubeVideoId(originalUrl)) {
+            console.log(`Fetching metadata for YouTube URL: ${originalUrl}`);
+            extractedData = await getYoutubeVideoDetails(originalUrl);
+        } else {
+            console.log(`Fetching metadata for generic URL: ${originalUrl}`);
+            extractedData = await getGenericPageMetadata(originalUrl);
+        }
+
+        // Merge with existing link data, prioritizing newly fetched data
+        const updatedLinkData = {
+            ...link,
+            title: extractedData.title || link.title, // Keep original title if new one is null/empty
+            description: extractedData.description,
+            author_name: extractedData.author_name,
+            author_profile_picture_url: extractedData.author_profile_picture_url,
+            content_vignette_url: extractedData.content_vignette_url,
+            publication_date: extractedData.publication_date,
+            extracted_metadata: extractedData.extracted_metadata // Store any extra bits here
+        };
+        
+        // Update the database with the new metadata
+        // We need a new DB function or modify an existing one.
+        // For now, let's assume a function `db.updateLinkMetadata` exists.
+        // This function would be:
+        // async function updateLinkMetadata(linkHash, metadata) {
+        //   const sql = \`UPDATE GatedLinks SET 
+        //                  title = $1, description = $2, author_name = $3, 
+        //                  author_profile_picture_url = $4, content_vignette_url = $5, 
+        //                  publication_date = $6, extracted_metadata = $7,
+        //                  updated_at = CURRENT_TIMESTAMP 
+        //                WHERE link_hash = $8\`;
+        //   const params = [
+        //     metadata.title, metadata.description, metadata.author_name,
+        //     metadata.author_profile_picture_url, metadata.content_vignette_url,
+        //     metadata.publication_date, metadata.extracted_metadata ? JSON.stringify(metadata.extracted_metadata) : null,
+        //     linkHash
+        //   ];
+        //   await pool.query(sql, params);
+        // }
+        // Since we don't have it yet, we will skip DB update in this step and just return data.
+        // In a real scenario, you would call: await db.updateLinkMetadata(link_hash, updatedLinkData);
+        await db.updateLinkMetadata(link_hash, updatedLinkData);
+
+        // Prepare response (subset of fields, or all, depending on needs)
+        const responseData = {
+            linkId: updatedLinkData.link_hash,
+            originalUrl: updatedLinkData.original_url,
+            title: updatedLinkData.title,
+            description: updatedLinkData.description,
+            authorName: updatedLinkData.author_name,
+            authorProfilePictureUrl: updatedLinkData.author_profile_picture_url,
+            contentVignetteUrl: updatedLinkData.content_vignette_url,
+            publicationDate: updatedLinkData.publication_date,
+            creatorAddress: updatedLinkData.creator_address,
+            priceInERC20: updatedLinkData.price_in_erc20,
+            isActive: updatedLinkData.is_active,
+            buyShortCode: updatedLinkData.buy_short_code, // Useful for client
+            // extractedMetadata: updatedLinkData.extracted_metadata, // Optionally return this
+        };
+
+        res.status(200).json(responseData);
+
+    } catch (error) {
+        console.error(`Error in /metadata/${link_hash} endpoint:`, error);
+        res.status(500).json({ error: 'Failed to extract metadata', details: error.message });
+    }
+});
+
 app.listen(port, () => {
 	console.log(`GivaBit server listening on port ${port}`)
 	console.log(`Access the GivaBit interface at: http://localhost:${port}/`)
@@ -368,4 +584,5 @@ app.listen(port, () => {
 	console.log('  GET    /links/creator/:creatorAddress')
 	console.log('  PATCH  /links/:link_hash/status')
 	console.log('  GET    /info/:buy_short_code')
+	console.log('  GET    /metadata/:link_hash') // New endpoint
 })
