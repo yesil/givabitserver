@@ -46,6 +46,21 @@
             <label for="title">Title (optional):</label>
             <input type="text" id="title" name="title" placeholder="My Awesome Content">
 
+            <label for="description">Description (optional):</label>
+            <textarea id="description" name="description" placeholder="A brief description of the content." style="width: calc(100% - 22px); height: 60px; padding: 10px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-family: Arial, sans-serif;"></textarea>
+
+            <label for="sourceName">Source Name (e.g., Author, Channel, Site - optional):</label>
+            <input type="text" id="sourceName" name="sourceName" placeholder="Creator Name or Source">
+
+            <label for="authorProfilePictureUrl">Author Profile Picture URL (optional):</label>
+            <input type="url" id="authorProfilePictureUrl" name="authorProfilePictureUrl" placeholder="https://example.com/profile.jpg">
+
+            <label for="contentVignetteUrl">Content Vignette/Thumbnail URL (optional):</label>
+            <input type="url" id="contentVignetteUrl" name="contentVignetteUrl" placeholder="https://example.com/thumbnail.jpg">
+
+            <label for="publicationDate">Publication Date (optional):</label>
+            <input type="datetime-local" id="publicationDate" name="publicationDate" style="width: calc(100% - 22px); padding: 10px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">
+
             <label for="priceInUSD">Price in USD:</label>
             <input type="number" id="priceInUSD" name="priceInUSD_display" placeholder="e.g., 10.00" required step="0.01">
             
@@ -85,7 +100,7 @@
     </div>
 
     <!-- Generate Social Posts -->
-    <div class="container">
+    <!-- <div class="container">
         <h2>3. Generate Social Posts</h2>
         <p class="endpoint">GET /generate</p>
         <form id="generatePostsForm">
@@ -101,7 +116,7 @@
             <h3>Response:</h3>
             <pre id="generatePostsResponse">Awaiting submission...</pre>
         </div>
-    </div>
+    </div> -->
 
     <!-- Update Link Status -->
     <div class="container">
@@ -153,6 +168,44 @@
         <div class="response-area">
             <h3>Response:</h3>
             <pre id="testMetadataResponse">Awaiting submission...</pre>
+        </div>
+    </div>
+
+    <!-- Generate Social Posts (AI) -->
+    <div class="container">
+        <h2>8. Generate/Fetch AI Social Posts</h2>
+        <p class="endpoint">GET /social/{buy_short_code}?force=true/false</p>
+        <form id="generateAISocialPostsForm">
+            <label for="buyShortCodeSocial">Buy Short Code:</label>
+            <input type="text" id="buyShortCodeSocial" name="buyShortCodeSocial" placeholder="YourBuyShortCode" required>
+
+            <label for="forceRefreshSocial">Force Refresh (regenerate posts even if cached):</label>
+            <input type="checkbox" id="forceRefreshSocial" name="forceRefreshSocial" style="width: auto; margin-top: 5px;">
+            
+            <button type="submit">Get Social Posts</button>
+        </form>
+        <div class="response-area">
+            <h3>Response:</h3>
+            <pre id="generateAISocialPostsResponse">Awaiting submission...</pre>
+        </div>
+    </div>
+
+    <!-- Create Link Intent -->
+    <div class="container">
+        <h2>Create Link Intent (Fetch Metadata)</h2>
+        <p class="endpoint">POST /create-link-intent</p>
+        <form id="createLinkIntentForm">
+            <label for="intentUrl">Original URL:</label>
+            <input type="url" id="intentUrl" name="intentUrl" placeholder="https://example.com/my-content" required>
+
+            <label for="intentCreatorAddress">Creator Address:</label>
+            <input type="text" id="intentCreatorAddress" name="intentCreatorAddress" placeholder="0xYourCreatorAddress" required>
+
+            <button type="submit">Fetch Link Intent</button>
+        </form>
+        <div class="response-area">
+            <h3>Response:</h3>
+            <pre id="createLinkIntentResponse">Awaiting submission...</pre>
         </div>
     </div>
 
@@ -253,6 +306,20 @@
             const formData = new FormData(event.target);
             const data = Object.fromEntries(formData.entries());
             
+            // Handle optional fields: if empty, remove them from the data payload
+            // The server-side will typically default them to null if not provided.
+            const optionalFields = ['title', 'description', 'sourceName', 'authorProfilePictureUrl', 'contentVignetteUrl', 'publicationDate'];
+            optionalFields.forEach(field => {
+                if (data[field] === "") {
+                    delete data[field];
+                }
+            });
+
+            // Remove the display field for USD price before sending
+            if (data.priceInUSD_display) {
+                delete data.priceInUSD_display;
+            }
+            
             document.getElementById('createLinkResponse').textContent = 'Processing...';
             try {
                 const response = await fetch(`${API_BASE_URL}/create-gated-link`, {
@@ -282,27 +349,6 @@
             // If it fails (e.g. pop-up blocker), they will see the message above.
             // We can't easily catch the 404/403 from a direct window.location.href change or window.open in the same way as fetch.
             window.open(url, '_blank'); 
-        });
-
-        // 3. Generate Social Posts
-        document.getElementById('generatePostsForm').addEventListener('submit', async function(event) {
-            event.preventDefault();
-            const linkHash = document.getElementById('linkHashGenerate').value;
-            const walletAddress = document.getElementById('walletAddressGenerate').value;
-            
-            if (!linkHash || !walletAddress) {
-                displayError('generatePostsResponse', {message: 'Link Hash and Wallet Address are required.'});
-                return;
-            }
-            document.getElementById('generatePostsResponse').textContent = 'Processing...';
-            try {
-                const response = await fetch(`${API_BASE_URL}/generate?linkHash=${encodeURIComponent(linkHash)}&walletAddress=${encodeURIComponent(walletAddress)}`);
-                const result = await response.json();
-                if (!response.ok) throw {...result, message: result.error || `HTTP error ${response.status}`};
-                displayResponse('generatePostsResponse', result);
-            } catch (error) {
-                displayError('generatePostsResponse', error, error.status);
-            }
         });
 
         // 4. Update Link Status
@@ -369,6 +415,58 @@
                 displayResponse('testMetadataResponse', result);
             } catch (error) {
                 displayError('testMetadataResponse', error, error.status);
+            }
+        });
+
+        // 8. Generate/Fetch AI Social Posts
+        document.getElementById('generateAISocialPostsForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const buyShortCode = document.getElementById('buyShortCodeSocial').value;
+            const forceRefresh = document.getElementById('forceRefreshSocial').checked;
+            
+            if (!buyShortCode) {
+                displayError('generateAISocialPostsResponse', { message: 'Buy Short Code is required.' });
+                return;
+            }
+            document.getElementById('generateAISocialPostsResponse').textContent = 'Processing...';
+            
+            try {
+                let url = `${API_BASE_URL}/social/${encodeURIComponent(buyShortCode)}`;
+                if (forceRefresh) {
+                    url += '?force=true';
+                }
+                const response = await fetch(url);
+                const result = await response.json();
+                if (!response.ok) throw {...result, message: result.error || `HTTP error ${response.status}`};
+                displayResponse('generateAISocialPostsResponse', result);
+            } catch (error) {
+                displayError('generateAISocialPostsResponse', error, error.status);
+            }
+        });
+
+        // Create Link Intent
+        document.getElementById('createLinkIntentForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const url = document.getElementById('intentUrl').value;
+            const creatorAddress = document.getElementById('intentCreatorAddress').value;
+            
+            if (!url || !creatorAddress) {
+                displayError('createLinkIntentResponse', { message: 'URL and Creator Address are required.' });
+                return;
+            }
+            document.getElementById('createLinkIntentResponse').textContent = 'Processing...';
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/create-link-intent`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url, creatorAddress })
+                });
+                const result = await response.json();
+                if (!response.ok) throw {...result, message: result.error || `HTTP error ${response.status}`};
+                displayResponse('createLinkIntentResponse', result);
+            } catch (error) {
+                displayError('createLinkIntentResponse', error, error.status);
             }
         });
 

@@ -173,9 +173,9 @@ async function storeGatedLink(linkData) {
   const sql = `INSERT INTO GatedLinks (
                  original_url, link_hash, buy_short_code, access_short_code, title, 
                  creator_address, price_in_erc20, tx_hash, is_active,
-                 description, author_name, author_profile_picture_url, content_vignette_url, publication_date, extracted_metadata
+                 description, author_name, author_profile_picture_url, content_vignette_url, publication_date, extracted_metadata, ai_social_posts
                )
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
                RETURNING id`;
   const params = [
     linkData.original_url,
@@ -192,7 +192,8 @@ async function storeGatedLink(linkData) {
     linkData.author_profile_picture_url,
     linkData.content_vignette_url,
     linkData.publication_date,
-    linkData.extracted_metadata ? JSON.stringify(linkData.extracted_metadata) : null // Ensure metadata is stringified if it's an object
+    linkData.extracted_metadata ? JSON.stringify(linkData.extracted_metadata) : null, // Ensure metadata is stringified if it's an object
+    null // Initialize ai_social_posts as null
   ];
   try {
     const result = await pool.query(sql, params);
@@ -281,7 +282,7 @@ async function getLinksByCreator(creatorAddress) {
     SELECT 
       id, original_url, link_hash, buy_short_code, access_short_code, title, 
       creator_address, price_in_erc20, tx_hash, status_update_tx_hash, is_active, 
-      description, author_name, author_profile_picture_url, content_vignette_url, publication_date, extracted_metadata,
+      description, author_name, author_profile_picture_url, content_vignette_url, publication_date, extracted_metadata, ai_social_posts,
       created_at, updated_at
     FROM GatedLinks
     WHERE creator_address = $1
@@ -310,9 +311,9 @@ async function replaceGatedLinkByHash(linkData) {
                          original_url, link_hash, buy_short_code, access_short_code, title, 
                          creator_address, price_in_erc20, tx_hash, status_update_tx_hash, is_active,
                          description, author_name, author_profile_picture_url, content_vignette_url, 
-                         publication_date, extracted_metadata, created_at
+                         publication_date, extracted_metadata, created_at, ai_social_posts
                        )
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
                        RETURNING id`;
     const params = [
       linkData.original_url,
@@ -331,7 +332,8 @@ async function replaceGatedLinkByHash(linkData) {
       linkData.content_vignette_url,
       linkData.publication_date,
       linkData.extracted_metadata ? JSON.stringify(linkData.extracted_metadata) : null,
-      linkData.created_at ? new Date(linkData.created_at) : new Date() // Preserve original created_at, or use current time if somehow missing
+      linkData.created_at ? new Date(linkData.created_at) : new Date(), // Preserve original created_at, or use current time if somehow missing
+      linkData.ai_social_posts ? JSON.stringify(linkData.ai_social_posts) : null // Preserve ai_social_posts
     ];
     
     const result = await client.query(insertSql, params);
@@ -346,6 +348,29 @@ async function replaceGatedLinkByHash(linkData) {
   }
 }
 
+/**
+ * Updates the ai_social_posts for a link by its buy_short_code.
+ * @param {string} buyShortCode
+ * @param {object} aiSocialPosts - The JSON object containing social media posts.
+ * @returns {Promise<object|null>} The updated link data or null if not found/updated.
+ */
+async function updateAISocialPosts(buyShortCode, aiSocialPosts) {
+  // updated_at will be handled by the trigger
+  const sql = `UPDATE GatedLinks SET ai_social_posts = $1 WHERE buy_short_code = $2 RETURNING *`;
+  try {
+    const result = await pool.query(sql, [aiSocialPosts ? JSON.stringify(aiSocialPosts) : null, buyShortCode]);
+    if (result.rowCount === 0) {
+      console.warn(`No link found with buy_short_code '${buyShortCode}' to update AI social posts.`);
+      return null;
+    }
+    console.log(`AI social posts updated for buy_short_code: ${buyShortCode}`);
+    return result.rows[0]; // Return the updated row
+  } catch (err) {
+    console.error('Error updating AI social posts. Message:', err.message, 'SQL:', sql, 'Params:', [aiSocialPosts, buyShortCode], 'Stack:', err.stack);
+    throw err;
+  }
+}
+
 module.exports = {
   // initializeDb, // Not typically exported directly, called on module load
   storeGatedLink,
@@ -356,5 +381,6 @@ module.exports = {
   getLinksByCreator,
   replaceGatedLinkByHash, // Export the new function
   // Export pool if direct access is needed elsewhere, though usually not recommended
-  // pool 
+  // pool
+  updateAISocialPosts,
 }; 
