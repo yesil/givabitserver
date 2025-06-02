@@ -320,45 +320,6 @@ app.get('/links/creator/:creatorAddress', async (req, res) => {
 	}
 });
 
-// New endpoint to get title by buy_short_code
-app.get('/info/:buy_short_code', async (req, res) => {
-	const { buy_short_code } = req.params;
-
-	// Predefined list of descriptions
-	const descriptions = [
-		"Unlock exclusive content and dive deeper into the story.",
-		"Get access to premium material not available anywhere else.",
-		"Discover the secrets behind this amazing creation.",
-		"Support the creator and enjoy this unique piece of content.",
-		"Your gateway to an enhanced experience."
-	];
-
-	try {
-		const link = await db.getLinkByBuyShortCode(buy_short_code);
-
-		if (!link) {
-			return res.status(404).json({ error: 'Link not found for the given buy short code.' });
-		}
-
-		// Optionally, you could also check if the link is active, depending on requirements
-		// if (!link.is_active) {
-		//    return res.status(403).json({ error: 'This link is currently inactive.' });
-		// }
-
-		const randomDescription = descriptions[Math.floor(Math.random() * descriptions.length)];
-
-		res.status(200).json({
-			buyShortCode: link.buy_short_code,
-			title: link.title,
-			description: randomDescription // Add the random description here
-		});
-
-	} catch (error) {
-		console.error(`Error fetching title for buy_short_code ${buy_short_code}:`, error);
-		res.status(500).json({ error: 'Failed to retrieve title', details: error.message });
-	}
-});
-
 // --- Helper functions for metadata extraction ---
 
 async function getYoutubeVideoDetails(youtubeUrl) {
@@ -480,30 +441,47 @@ async function getGenericPageMetadata(url) {
 }
 
 // --- New Metadata Endpoint ---
-app.get('/metadata/:link_hash', async (req, res) => {
-    const { link_hash } = req.params;
+app.get('/metadata/:buy_short_code', async (req, res) => {
+    const { buy_short_code } = req.params;
+    const forceRefresh = req.query.force === 'true';
 
     try {
-        const link = await db.getLinkByHash(link_hash);
+        const link = await db.getLinkByBuyShortCode(buy_short_code);
         if (!link) {
-            return res.status(404).json({ error: 'Link not found with the provided hash.' });
+            return res.status(404).json({ error: 'Link not found with the provided buy_short_code.' });
         }
 
-        // Check if metadata already exists and is recent enough (e.g., less than 24 hours old)
-        // For simplicity, we'll always re-fetch for now, but caching would be good.
-        // const metadataIsRecent = link.updated_at && (new Date() - new Date(link.updated_at)) < 24 * 60 * 60 * 1000;
-        // if (link.title && link.description && metadataIsRecent) { // Basic check
-        //    return res.status(200).json({ /* ... existing link data ... */ });
-        // }
+        // If not forcing refresh and a title already exists in DB, return cached data.
+        // link.title being non-null implies metadata has been fetched at least once.
+        if (!forceRefresh && link.title !== null) {
+            console.log(`Returning cached metadata for buy_short_code: ${buy_short_code} (title exists)`);
+            const responseData = {
+                linkId: link.link_hash,
+                originalUrl: link.original_url,
+                title: link.title,
+                description: link.description,
+                authorName: link.author_name,
+                authorProfilePictureUrl: link.author_profile_picture_url,
+                contentVignetteUrl: link.content_vignette_url,
+                publicationDate: link.publication_date,
+                creatorAddress: link.creator_address,
+                priceInERC20: link.price_in_erc20,
+                isActive: link.is_active,
+                buyShortCode: link.buy_short_code,
+            };
+            return res.status(200).json(responseData);
+        }
         
+        // If we reach here, we need to refresh (either forced or title was null).
         let extractedData = {};
         const originalUrl = link.original_url;
 
         if (extractYoutubeVideoId(originalUrl)) {
+            console.log(`Refreshing metadata for link associated with buy_short_code: ${buy_short_code} (forceRefresh: ${forceRefresh})`); // Log only for YouTube refresh
             console.log(`Fetching metadata for YouTube URL: ${originalUrl}`);
             extractedData = await getYoutubeVideoDetails(originalUrl);
         } else {
-            console.log(`Fetching metadata for generic URL: ${originalUrl}`);
+            console.log(`Fetching metadata for generic URL (buy_short_code: ${buy_short_code}, forceRefresh: ${forceRefresh}): ${originalUrl}`);
             extractedData = await getGenericPageMetadata(originalUrl);
         }
 
@@ -519,28 +497,7 @@ app.get('/metadata/:link_hash', async (req, res) => {
             extracted_metadata: extractedData.extracted_metadata // Store any extra bits here
         };
         
-        // Update the database with the new metadata
-        // We need a new DB function or modify an existing one.
-        // For now, let's assume a function `db.updateLinkMetadata` exists.
-        // This function would be:
-        // async function updateLinkMetadata(linkHash, metadata) {
-        //   const sql = \`UPDATE GatedLinks SET 
-        //                  title = $1, description = $2, author_name = $3, 
-        //                  author_profile_picture_url = $4, content_vignette_url = $5, 
-        //                  publication_date = $6, extracted_metadata = $7,
-        //                  updated_at = CURRENT_TIMESTAMP 
-        //                WHERE link_hash = $8\`;
-        //   const params = [
-        //     metadata.title, metadata.description, metadata.author_name,
-        //     metadata.author_profile_picture_url, metadata.content_vignette_url,
-        //     metadata.publication_date, metadata.extracted_metadata ? JSON.stringify(metadata.extracted_metadata) : null,
-        //     linkHash
-        //   ];
-        //   await pool.query(sql, params);
-        // }
-        // Since we don't have it yet, we will skip DB update in this step and just return data.
-        // In a real scenario, you would call: await db.updateLinkMetadata(link_hash, updatedLinkData);
-        await db.updateLinkMetadata(link_hash, updatedLinkData);
+        await db.replaceGatedLinkByHash(updatedLinkData);
 
         // Prepare response (subset of fields, or all, depending on needs)
         const responseData = {
@@ -562,7 +519,7 @@ app.get('/metadata/:link_hash', async (req, res) => {
         res.status(200).json(responseData);
 
     } catch (error) {
-        console.error(`Error in /metadata/${link_hash} endpoint:`, error);
+        console.error(`Error in /metadata/${buy_short_code} endpoint:`, error);
         res.status(500).json({ error: 'Failed to extract metadata', details: error.message });
     }
 });
@@ -583,6 +540,5 @@ app.listen(port, () => {
 	console.log('  GET    /buy/:buy_short_code')
 	console.log('  GET    /links/creator/:creatorAddress')
 	console.log('  PATCH  /links/:link_hash/status')
-	console.log('  GET    /info/:buy_short_code')
-	console.log('  GET    /metadata/:link_hash') // New endpoint
+	console.log('  GET    /metadata/:buy_short_code') // Updated endpoint path
 })

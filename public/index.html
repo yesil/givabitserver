@@ -141,28 +141,13 @@
         </div>
     </div>
 
-    <!-- Get Content Info by Buy Code -->
-    <div class="container">
-        <h2>6. Get Content Info by Buy Code</h2>
-        <p class="endpoint">GET /info/{buy_short_code}</p>
-        <form id="getInfoByBuyCodeForm">
-            <label for="buyCodeInfo">Buy Short Code:</label>
-            <input type="text" id="buyCodeInfo" name="buyCodeInfo" placeholder="YourBuyShortCode" required>
-            <button type="submit">Get Info</button>
-        </form>
-        <div class="response-area">
-            <h3>Response:</h3>
-            <pre id="getInfoByBuyCodeResponse">Awaiting submission...</pre>
-        </div>
-    </div>
-
     <!-- Test Metadata Endpoint -->
     <div class="container">
         <h2>7. Test Metadata Endpoint</h2>
-        <p class="endpoint">GET /metadata/{link_hash}</p>
+        <p class="endpoint">GET /metadata/{buy_short_code}</p>
         <form id="testMetadataForm">
-            <label for="linkHashMetadata">Link Hash (linkId):</label>
-            <input type="text" id="linkHashMetadata" name="linkHashMetadata" placeholder="0xLinkHashToTest" required>
+            <label for="buyShortCodeMetadata">Buy Short Code:</label>
+            <input type="text" id="buyShortCodeMetadata" name="buyShortCodeMetadata" placeholder="YourBuyShortCode" required>
             <button type="submit">Test Metadata</button>
         </form>
         <div class="response-area">
@@ -366,40 +351,19 @@
             }
         });
 
-        // 6. Get Content Info by Buy Code
-        document.getElementById('getInfoByBuyCodeForm').addEventListener('submit', async function(event) {
-            event.preventDefault();
-            const buyCode = document.getElementById('buyCodeInfo').value;
-            
-            if (!buyCode) {
-                displayError('getInfoByBuyCodeResponse', { message: 'Buy Short Code is required.' });
-                return;
-            }
-            document.getElementById('getInfoByBuyCodeResponse').textContent = 'Processing...';
-            
-            try {
-                const response = await fetch(`${API_BASE_URL}/info/${encodeURIComponent(buyCode)}`);
-                const result = await response.json();
-                if (!response.ok) throw {...result, message: result.error || `HTTP error ${response.status}`};
-                displayResponse('getInfoByBuyCodeResponse', result);
-            } catch (error) {
-                displayError('getInfoByBuyCodeResponse', error, error.status);
-            }
-        });
-
         // 7. Test Metadata Endpoint
         document.getElementById('testMetadataForm').addEventListener('submit', async function(event) {
             event.preventDefault();
-            const linkHash = document.getElementById('linkHashMetadata').value;
+            const buyShortCode = document.getElementById('buyShortCodeMetadata').value;
             
-            if (!linkHash) {
-                displayError('testMetadataResponse', { message: 'Link Hash is required.' });
+            if (!buyShortCode) {
+                displayError('testMetadataResponse', { message: 'Buy Short Code is required.' });
                 return;
             }
             document.getElementById('testMetadataResponse').textContent = 'Processing...';
             
             try {
-                const response = await fetch(`${API_BASE_URL}/metadata/${encodeURIComponent(linkHash)}`);
+                const response = await fetch(`${API_BASE_URL}/metadata/${encodeURIComponent(buyShortCode)}`);
                 const result = await response.json();
                 if (!response.ok) throw {...result, message: result.error || `HTTP error ${response.status}`};
                 displayResponse('testMetadataResponse', result);

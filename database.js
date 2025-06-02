@@ -297,29 +297,52 @@ async function getLinksByCreator(creatorAddress) {
   }
 }
 
-async function updateLinkMetadata(linkHash, metadata) {
-  const sql = `UPDATE GatedLinks SET 
-                 title = $1, description = $2, author_name = $3, 
-                 author_profile_picture_url = $4, content_vignette_url = $5, 
-                 publication_date = $6, extracted_metadata = $7,
-                 updated_at = CURRENT_TIMESTAMP 
-               WHERE link_hash = $8`;
-  const params = [
-    metadata.title,
-    metadata.description,
-    metadata.author_name,
-    metadata.author_profile_picture_url,
-    metadata.content_vignette_url,
-    metadata.publication_date,
-    metadata.extracted_metadata ? JSON.stringify(metadata.extracted_metadata) : null,
-    linkHash
-  ];
+async function replaceGatedLinkByHash(linkData) {
+  const client = await pool.connect();
   try {
-    const result = await pool.query(sql, params);
-    return result.rowCount;
+    await client.query('BEGIN'); // Start transaction
+
+    const deleteSql = `DELETE FROM GatedLinks WHERE link_hash = $1`;
+    await client.query(deleteSql, [linkData.link_hash]);
+
+    // All columns from the table definition, excluding id (auto-generated) and updated_at (trigger-handled)
+    const insertSql = `INSERT INTO GatedLinks (
+                         original_url, link_hash, buy_short_code, access_short_code, title, 
+                         creator_address, price_in_erc20, tx_hash, status_update_tx_hash, is_active,
+                         description, author_name, author_profile_picture_url, content_vignette_url, 
+                         publication_date, extracted_metadata, created_at
+                       )
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                       RETURNING id`;
+    const params = [
+      linkData.original_url,
+      linkData.link_hash,
+      linkData.buy_short_code,
+      linkData.access_short_code,
+      linkData.title,
+      linkData.creator_address ? linkData.creator_address.toLowerCase() : null,
+      linkData.price_in_erc20,
+      linkData.tx_hash, // Preserving original creation tx_hash
+      linkData.status_update_tx_hash, // Preserving status update tx_hash
+      linkData.is_active === undefined ? true : linkData.is_active,
+      linkData.description,
+      linkData.author_name,
+      linkData.author_profile_picture_url,
+      linkData.content_vignette_url,
+      linkData.publication_date,
+      linkData.extracted_metadata ? JSON.stringify(linkData.extracted_metadata) : null,
+      linkData.created_at ? new Date(linkData.created_at) : new Date() // Preserve original created_at, or use current time if somehow missing
+    ];
+    
+    const result = await client.query(insertSql, params);
+    await client.query('COMMIT'); // Commit transaction
+    return result.rows[0].id;
   } catch (err) {
-    console.error('Error updating link metadata. Message:', err.message, 'SQL:', sql, 'Params:', params, 'Stack:', err.stack);
+    await client.query('ROLLBACK'); // Rollback transaction on error
+    console.error('Error replacing gated link. Message:', err.message, 'SQL (delete):', deleteSql, 'SQL (insert):', insertSql, 'Params:', params, 'Stack:', err.stack);
     throw err;
+  } finally {
+    client.release();
   }
 }
 
@@ -331,7 +354,7 @@ module.exports = {
   getLinkByHash,
   updateLinkStatus,
   getLinksByCreator,
-  updateLinkMetadata, // Export the new function
+  replaceGatedLinkByHash, // Export the new function
   // Export pool if direct access is needed elsewhere, though usually not recommended
   // pool 
 }; 
