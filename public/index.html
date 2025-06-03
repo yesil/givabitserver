@@ -453,7 +453,7 @@
             document.getElementById('generateAISocialPostsResponse').textContent = 'Processing...';
             
             try {
-                let url = `${API_BASE_URL}/social/${encodeURIComponent(buyShortCode)}`;
+                let url = `${API_BASE_URL}/social-posts/${encodeURIComponent(buyShortCode)}`;
                 if (forceRefresh) {
                     url += '?force=true';
                 }

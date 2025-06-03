@@ -138,6 +138,9 @@ app.post("/create-gated-link", async (req, res) => {
       });
     }
 
+    // Trigger social post generation in the background (fire-and-forget)
+    fetch(`${GIVABIT_BASE_URL}/social-posts/${buyShortCode}`);
+
     const shareableBuyLink = `${GIVABIT_BASE_URL}/buy/${buyShortCode}`;
 
     res.status(201).json({
@@ -200,50 +203,7 @@ app.get("/content/:access_short_code", async (req, res) => {
 
 // New endpoint for buy/purchase landing (primarily for mobile app)
 app.get("/buy/:buy_short_code", async (req, res) => {
-  const { buy_short_code } = req.params;
-
-  try {
-    const link = await db.getLinkByBuyShortCode(buy_short_code);
-
-    if (!link) {
-      return res.status(404).json({ error: "Purchase link not found." });
-    }
-
-    if (!link.is_active) {
-      return res.status(403).json({
-        error: "This link is currently inactive and cannot be purchased.",
-      });
-    }
-
-    // In a full implementation, you might also fetch live details from the smart contract here
-    // const contractDetails = await blockchain.getLinkDetailsFromChain(link.link_hash);
-    // const currentPrice = contractDetails.priceInERC20;
-    // const isActiveOnChain = contractDetails.isActive;
-    // const erc20TokenAddress = await blockchain.getErc20TokenAddress(); // If needed
-
-    // For now, use data primarily from DB, assuming it's reasonably in sync or SC calls are too slow for this EP
-    res.status(200).json({
-      linkId: link.link_hash, // Full hash for the app to use with payForAccess
-      buyShortCode: link.buy_short_code,
-      title: link.title, // Add title here
-      // description: link.description,
-      creatorAddress: link.creator_address,
-      priceInERC20: link.price_in_erc20, // This should ideally be from SC for accuracy
-      // erc20TokenAddress: erc20TokenAddress, // The token for payment
-      paymentContractAddress: process.env.CONTRACT_ADDRESS, // The GatedLinkAccessManager contract address
-      isActiveOnDb: link.is_active, // Status from DB
-      // isActiveOnChain: isActiveOnChain // Add if fetching from SC
-    });
-  } catch (error) {
-    console.error(
-      `Error fetching buy link details for ${buy_short_code}:`,
-      error
-    );
-    res.status(500).json({
-      error: "Failed to retrieve purchase link details",
-      details: error.message,
-    });
-  }
+  res.status(200).send();
 });
 
 // PATCH /links/{link_hash}/status
@@ -1004,7 +964,7 @@ app.listen(port, () => {
   console.log("  GET    /links/creator/:creatorAddress");
   console.log("  PATCH  /links/:link_hash/status");
   console.log("  GET    /metadata/:buy_short_code");
-  console.log("  GET    /social/:buy_short_code");
+  console.log("  GET    /social-posts/:buy_short_code");
   console.log("  POST   /create-link-intent");
   console.log("  GET    /feed/:walletAddress");
 });
