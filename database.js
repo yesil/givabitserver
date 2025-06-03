@@ -371,6 +371,38 @@ async function updateAISocialPosts(buyShortCode, aiSocialPosts) {
   }
 }
 
+/**
+ * Retrieves the latest active links for a feed, sorted by creation date.
+ * @param {number} limit - Maximum number of links to return (default: 20)
+ * @param {number} offset - Number of links to skip for pagination (default: 0)
+ * @param {string} walletAddress - The wallet address of the user (for future customization)
+ * @returns {Promise<Array<object>>} A promise that resolves to an array of link objects.
+ */
+async function getLatestLinksForFeed(limit = 20, offset = 0, walletAddress = null) {
+  // For now, we return all active links sorted by creation date
+  // In the future, this can be customized based on walletAddress (e.g., following, preferences, etc.)
+  const sql = `
+    SELECT 
+      id, original_url, link_hash, buy_short_code, access_short_code, title, 
+      creator_address, price_in_erc20, tx_hash, status_update_tx_hash, is_active, 
+      description, author_name, author_profile_picture_url, content_vignette_url, 
+      publication_date, extracted_metadata, ai_social_posts,
+      created_at, updated_at
+    FROM GatedLinks
+    WHERE is_active = true
+    ORDER BY created_at DESC
+    LIMIT $1 OFFSET $2;
+  `;
+
+  try {
+    const result = await pool.query(sql, [limit, offset]);
+    return result.rows || [];
+  } catch (err) {
+    console.error('Error fetching links for feed. Message:', err.message, 'SQL:', sql, 'Params:', [limit, offset], 'Stack:', err.stack);
+    throw err;
+  }
+}
+
 module.exports = {
   // initializeDb, // Not typically exported directly, called on module load
   storeGatedLink,
@@ -380,7 +412,8 @@ module.exports = {
   updateLinkStatus,
   getLinksByCreator,
   replaceGatedLinkByHash, // Export the new function
+  updateAISocialPosts,
+  getLatestLinksForFeed, // Export the new feed function
   // Export pool if direct access is needed elsewhere, though usually not recommended
   // pool
-  updateAISocialPosts,
 }; 

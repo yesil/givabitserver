@@ -906,6 +906,79 @@ Make sure to escape special characters in the posts so that JSON parsing works.
   }
 });
 
+// --- New Feed Endpoint ---
+app.get("/feed/:walletAddress", async (req, res) => {
+  let { walletAddress } = req.params;
+  const limit = parseInt(req.query.limit) || 20; // Default to 20 items
+  const offset = parseInt(req.query.offset) || 0; // Default to 0 for pagination
+
+  // Validate walletAddress format
+  if (
+    !walletAddress ||
+    typeof walletAddress !== "string" ||
+    !walletAddress.startsWith("0x")
+  ) {
+    return res.status(400).json({ error: "Invalid walletAddress format." });
+  }
+
+  // Normalize to lowercase for consistent handling
+  walletAddress = walletAddress.toLowerCase();
+
+  // Validate pagination parameters
+  if (limit < 1 || limit > 100) {
+    return res.status(400).json({ error: "Limit must be between 1 and 100." });
+  }
+  if (offset < 0) {
+    return res.status(400).json({ error: "Offset must be non-negative." });
+  }
+
+  try {
+    console.log(
+      `Fetching feed for wallet: ${walletAddress}, limit: ${limit}, offset: ${offset}`
+    );
+
+    // Get the latest links from the database
+    const links = await db.getLatestLinksForFeed(limit, offset, walletAddress);
+
+    // Format the links for the response
+    const formattedLinks = links.map((link) => {
+      const shareableBuyLink = `${GIVABIT_BASE_URL}/buy/${link.buy_short_code}`;
+      return {
+        linkId: link.link_hash,
+        buyShortCode: link.buy_short_code,
+        originalUrl: link.original_url,
+        title: link.title,
+        description: link.description,
+        authorName: link.author_name,
+        authorProfilePictureUrl: link.author_profile_picture_url,
+        contentVignetteUrl: link.content_vignette_url,
+        publicationDate: link.publication_date,
+        creatorAddress: link.creator_address,
+        priceInERC20: link.price_in_erc20,
+        isActive: link.is_active,
+        createdAt: link.created_at,
+        shareableBuyLink: shareableBuyLink,
+      };
+    });
+
+    res.status(200).json({
+      walletAddress: walletAddress,
+      links: formattedLinks,
+      pagination: {
+        limit: limit,
+        offset: offset,
+        hasMore: links.length === limit, // If we got the full limit, there might be more
+      },
+    });
+  } catch (error) {
+    console.error(`Error fetching feed for wallet ${walletAddress}:`, error);
+    res.status(500).json({
+      error: "Failed to retrieve feed",
+      details: error.message,
+    });
+  }
+});
+
 app.listen(port, () => {
   console.log(`GivaBit server listening on port ${port}`);
   console.log(`Access the GivaBit interface at: http://localhost:${port}/`);
@@ -933,4 +1006,5 @@ app.listen(port, () => {
   console.log("  GET    /metadata/:buy_short_code");
   console.log("  GET    /social/:buy_short_code");
   console.log("  POST   /create-link-intent");
+  console.log("  GET    /feed/:walletAddress");
 });
