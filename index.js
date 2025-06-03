@@ -634,7 +634,7 @@ app.post("/create-link-intent", async (req, res) => {
 });
 
 // --- New Social Post Generation Endpoint ---
-app.get("/social/:buy_short_code", async (req, res) => {
+app.get("/social-posts/:buy_short_code", async (req, res) => {
   const { buy_short_code } = req.params;
   const forceRefresh = req.query.force === "true";
 
@@ -721,7 +721,7 @@ ${
 
 General Instructions for all posts:
 - Each post should be engaging and create a sense of urgency or exclusivity.
-- Include relevant hashtags.
+- Include 3 hashtags at max.
 - Ensure the buy link (${shareableBuyLink}) is clearly presented.
 - If an Author Name is provided, consider incorporating it naturally if it enhances the post (e.g., "New article from [Author Name]!").
 - If generating multiple variations, ensure they are distinct from each other.
