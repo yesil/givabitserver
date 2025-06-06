@@ -93,6 +93,7 @@ app.post("/create-gated-link", async (req, res) => {
     const accessShortCode = generateShortCode();
 
     // 1. Smart Contract Interaction
+    let actualTxHash = null;
     try {
       const txReceipt = await createLinkOnChain(
         linkHash,
@@ -100,7 +101,7 @@ app.post("/create-gated-link", async (req, res) => {
         priceInERC20,
         true
       );
-      const actualTxHash = txReceipt.transactionHash;
+      actualTxHash = txReceipt.transactionHash;
       console.log("Blockchain transaction successful:", actualTxHash);
     } catch (blockchainError) {
       console.error("Blockchain interaction failed:", blockchainError.message);

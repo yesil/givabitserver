@@ -14,7 +14,7 @@ const CONTRACT_ABI = [
 
   // Functions
   "function checkAccess(bytes32 _linkId, address _user) view returns (bool)",
-  "function createLink(bytes32 _linkId, address _creator, uint256 _priceInERC20, bool _initialIsActive) nonpayable",
+  "function createLink(bytes32 _linkId, address _creator, uint256 _priceInERC20, bool _initialIsActive)",
   "function eip712Domain() view returns (bytes1 fields, string name, string version, uint256 chainId, address verifyingContract, bytes32 salt, uint256[] extensions)",
   "function gatedLinkInfo(bytes32) view returns (bytes32 linkId, address creator, uint256 priceInERC20, bool isActive)",
   "function getDomainSeparator() view returns (bytes32)",
@@ -23,10 +23,10 @@ const CONTRACT_ABI = [
   "function hasAccess(bytes32, address) view returns (bool)",
   "function nonces(address) view returns (uint256)",
   "function owner() view returns (address)",
-  "function payForAccess(bytes32 _linkId, address _beneficiary) nonpayable",
-  "function payForAccessWithSignature(bytes32 _linkId, address _beneficiary, address _payer, uint256 _deadline, bytes _signature) nonpayable",
-  "function setLinkActivity(bytes32 _linkId, bool _isActive) nonpayable",
-  "function transferOwnership(address newOwner) nonpayable",
+  "function payForAccess(bytes32 _linkId, address _beneficiary)",
+  "function payForAccessWithSignature(bytes32 _linkId, address _beneficiary, address _payer, uint256 _deadline, bytes _signature)",
+  "function setLinkActivity(bytes32 _linkId, bool _isActive)",
+  "function transferOwnership(address newOwner)",
   "function yourERC20Token() view returns (address)",
 
   // Events
@@ -56,6 +56,8 @@ const provider = new ethers.JsonRpcProvider(RPC_URL);
 const wallet = PRIVATE_KEY ? new ethers.Wallet(PRIVATE_KEY, provider) : null; // Only create wallet if private key is available
 const contract = CONTRACT_ADDRESS && CONTRACT_ABI.length > 2 && wallet ? new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, wallet) : null;
 
+console.log(contract.interface.functions);
+
 /**
  * Creates a new gated link on the blockchain.
  * @param {string} linkId The keccak256 hash of the URL (bytes32).
@@ -66,7 +68,6 @@ const contract = CONTRACT_ADDRESS && CONTRACT_ABI.length > 2 && wallet ? new eth
  * @throws {Error} If blockchain interaction fails or setup is incomplete.
  */
 async function createLinkOnChain(linkId, creatorAddress, priceInERC20, initialIsActive) {
-  console.log(contract, wallet);
   if (!contract || !wallet) {
     throw new Error('Blockchain interaction module is not properly initialized. Check private key and contract address.');
   }
