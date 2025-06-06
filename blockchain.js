@@ -9,21 +9,40 @@ const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 // --- Contract ABI (Application Binary Interface) ---
 // You need to replace this with the actual ABI of your GatedLinkAccessManager.sol contract
 const CONTRACT_ABI = [
+  // Constructor
+  "constructor(address _erc20TokenAddress)",
+
   // Functions
-  "function createLink(bytes32 _linkId, address _creator, uint256 _priceInERC20, bool _initialIsActive) external",
-  "function setLinkActivity(bytes32 _linkId, bool _isActive) external",
-  "function payForAccess(bytes32 _linkId) external",
-  "function checkAccess(bytes32 _linkId, address _user) external view returns (bool)",
-  "function getLinkDetails(bytes32 _linkId) external view returns (tuple(bytes32 linkId, address creator, uint256 priceInERC20, bool isActive) link)",
-  "function transferOwnership(address newOwner) external",
-  "function owner() external view returns (address)",
-  "function yourERC20Token() external view returns (address)",
+  "function checkAccess(bytes32 _linkId, address _user) view returns (bool)",
+  "function createLink(bytes32 _linkId, address _creator, uint256 _priceInERC20, bool _initialIsActive) nonpayable",
+  "function eip712Domain() view returns (bytes1 fields, string name, string version, uint256 chainId, address verifyingContract, bytes32 salt, uint256[] extensions)",
+  "function gatedLinkInfo(bytes32) view returns (bytes32 linkId, address creator, uint256 priceInERC20, bool isActive)",
+  "function getDomainSeparator() view returns (bytes32)",
+  "function getLinkDetails(bytes32 _linkId) view returns (tuple(bytes32 linkId, address creator, uint256 priceInERC20, bool isActive))",
+  "function getNonce(address _address) view returns (uint256)",
+  "function hasAccess(bytes32, address) view returns (bool)",
+  "function nonces(address) view returns (uint256)",
+  "function owner() view returns (address)",
+  "function payForAccess(bytes32 _linkId, address _beneficiary) nonpayable",
+  "function payForAccessWithSignature(bytes32 _linkId, address _beneficiary, address _payer, uint256 _deadline, bytes _signature) nonpayable",
+  "function setLinkActivity(bytes32 _linkId, bool _isActive) nonpayable",
+  "function transferOwnership(address newOwner) nonpayable",
+  "function yourERC20Token() view returns (address)",
 
   // Events
-  "event LinkCreated(bytes32 indexed linkId, address indexed creator, uint256 priceInERC20, bool isActive)",
+  "event AccessGranted(bytes32 indexed linkId, address indexed beneficiary)",
+  "event EIP712DomainChanged()",
   "event LinkActivitySet(bytes32 indexed linkId, bool isActive)",
+  "event LinkCreated(bytes32 indexed linkId, address indexed creator, uint256 priceInERC20, bool isActive)",
+  "event MetaTransactionExecuted(bytes32 indexed linkId, address indexed payer, address indexed beneficiary, address relayer)",
   "event PaymentMade(bytes32 indexed linkId, address indexed buyer, address indexed creator, uint256 amountPaid)",
-  "event AccessGranted(bytes32 indexed linkId, address indexed buyer)"
+
+  // Errors
+  "error ECDSAInvalidSignature()",
+  "error ECDSAInvalidSignatureLength(uint256 length)",
+  "error ECDSAInvalidSignatureS(bytes32 s)",
+  "error InvalidShortString()",
+  "error StringTooLong(string str)"
 ];
 
 if (!PRIVATE_KEY || !CONTRACT_ADDRESS) {
@@ -88,9 +107,38 @@ async function setLinkActivityOnChain(linkId, newActiveState) {
   }
 }
 
+/**
+ * Relays a pre-signed payForAccess transaction to the blockchain.
+ * The server's wallet pays the gas for this meta-transaction.
+ * @param {string} linkId The keccak256 hash of the URL (bytes32).
+ * @param {string} beneficiaryAddress The address of the beneficiary.
+ * @param {string} payerAddress The address of the EOA that signed the transaction.
+ * @param {string | number} deadline The deadline for the signature.
+ * @param {string} signature The EOA's signature.
+ * @returns {Promise<ethers.providers.TransactionReceipt>} The transaction receipt.
+ * @throws {Error} If blockchain interaction fails or setup is incomplete.
+ */
+async function relayPayForAccessWithSignature(linkId, beneficiaryAddress, payerAddress, deadline, signature) {
+  if (!contract || !wallet) {
+    throw new Error('Blockchain interaction module is not properly initialized. Check private key and contract address.');
+  }
+  try {
+    console.log(`Attempting to relay payForAccessWithSignature for linkId: ${linkId}, beneficiary: ${beneficiaryAddress}, payer: ${payerAddress}, deadline: ${deadline}`);
+    const tx = await contract.payForAccessWithSignature(linkId, beneficiaryAddress, payerAddress, deadline, signature);
+    console.log('Transaction sent via relayer (payForAccessWithSignature):', tx.hash);
+    const receipt = await tx.wait(); // Wait for the transaction to be mined
+    console.log('Transaction confirmed via relayer (payForAccessWithSignature):', receipt.transactionHash);
+    return receipt;
+  } catch (error) {
+    console.error('Error in relayPayForAccessWithSignature:', error);
+    throw new Error(`Failed to relay payForAccessWithSignature on blockchain: ${error.message}`);
+  }
+}
+
 module.exports = {
   createLinkOnChain,
   setLinkActivityOnChain,
+  relayPayForAccessWithSignature,
   // You can export the provider, wallet, or contract instance if needed elsewhere,
   // but it's generally better to keep interactions encapsulated within this module.
 }; 

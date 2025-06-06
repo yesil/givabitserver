@@ -13,7 +13,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const db = require("./database");
 
 // Blockchain interactions
-const { createLinkOnChain, setLinkActivityOnChain } = require("./blockchain");
+const { createLinkOnChain, setLinkActivityOnChain, relayPayForAccessWithSignature } = require("./blockchain");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -37,6 +37,7 @@ const GIVABIT_BASE_URL =
   process.env.GIVABIT_APP_URL ||
   "https://givabit-server-krlus.ondigitalocean.app";
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+const DEFAULT_RELAYER_PAYER_ADDRESS = process.env.DEFAULT_RELAYER_PAYER_ADDRESS;
 
 const youtube = google.youtube({
   version: "v3",
@@ -92,8 +93,6 @@ app.post("/create-gated-link", async (req, res) => {
     const accessShortCode = generateShortCode();
 
     // 1. Smart Contract Interaction
-    let actualTxHash =
-      "0xmockTransactionHash_default_" + crypto.randomBytes(10).toString("hex");
     try {
       const txReceipt = await createLinkOnChain(
         linkHash,
@@ -101,7 +100,7 @@ app.post("/create-gated-link", async (req, res) => {
         priceInERC20,
         true
       );
-      actualTxHash = txReceipt.transactionHash;
+      const actualTxHash = txReceipt.transactionHash;
       console.log("Blockchain transaction successful:", actualTxHash);
     } catch (blockchainError) {
       console.error("Blockchain interaction failed:", blockchainError.message);
@@ -633,6 +632,64 @@ app.post("/create-link-intent", async (req, res) => {
   }
 });
 
+// New endpoint for relaying signed payment transactions
+app.post("/relay-signed-payment", async (req, res) => {
+  const {
+    linkId,
+    beneficiaryAddress,
+    deadline,
+    signature
+  } = req.body;
+
+  // Basic validation
+  if (!linkId || !beneficiaryAddress || deadline === undefined || !signature) {
+    return res.status(400).json({
+      error: "Missing required fields: linkId, beneficiaryAddress, deadline, signature",
+    });
+  }
+
+  // More specific validation (example)
+  if (!ethers.isHexString(linkId) || linkId.length !== 66) { // bytes32 should be 0x + 64 hex chars
+    return res.status(400).json({ error: "Invalid linkId format. Expected a 0x-prefixed 32-byte hex string." });
+  }
+  if (!ethers.isAddress(beneficiaryAddress)) {
+    return res.status(400).json({ error: "Invalid beneficiaryAddress format." });
+  }
+  if (typeof deadline !== 'number' && (typeof deadline !== 'string' || isNaN(parseInt(deadline)))) {
+      return res.status(400).json({ error: "Invalid deadline format. Expected a number or numeric string." });
+  }
+  if (!ethers.isHexString(signature)) {
+    return res.status(400).json({ error: "Invalid signature format. Expected a 0x-prefixed hex string." });
+  }
+
+  const payerAddressToUse = DEFAULT_RELAYER_PAYER_ADDRESS;
+
+  try {
+    console.log(`Received /relay-signed-payment for linkId: ${linkId}, with configured payer: ${payerAddressToUse}`);
+    const txReceipt = await relayPayForAccessWithSignature(
+      linkId,
+      beneficiaryAddress,
+      payerAddressToUse,
+      BigInt(deadline),
+      signature
+    );
+
+    res.status(200).json({
+      message: "Signed payment transaction relayed successfully.",
+      transactionHash: txReceipt.transactionHash,
+      linkId: linkId,
+      payerAddress: payerAddressToUse,
+      beneficiaryAddress: beneficiaryAddress,
+    });
+  } catch (error) {
+    console.error(`Error in /relay-signed-payment for linkId ${linkId} (payer: ${payerAddressToUse}):`, error);
+    res.status(500).json({
+      error: "Failed to relay signed payment transaction",
+      details: error.message,
+    });
+  }
+});
+
 // --- New Social Post Generation Endpoint ---
 app.get("/social-posts/:buy_short_code", async (req, res) => {
   const { buy_short_code } = req.params;
@@ -956,15 +1013,4 @@ app.listen(port, () => {
       `Note: Shareable content links will be constructed using the base URL: ${GIVABIT_BASE_URL}`
     );
   }
-
-  console.log("Defined API endpoints:");
-  console.log("  POST   /create-gated-link");
-  console.log("  GET    /content/:access_short_code");
-  console.log("  GET    /buy/:buy_short_code");
-  console.log("  GET    /links/creator/:creatorAddress");
-  console.log("  PATCH  /links/:link_hash/status");
-  console.log("  GET    /metadata/:buy_short_code");
-  console.log("  GET    /social-posts/:buy_short_code");
-  console.log("  POST   /create-link-intent");
-  console.log("  GET    /feed/:walletAddress");
 });
